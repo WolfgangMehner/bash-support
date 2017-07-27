@@ -2,9 +2,9 @@
 "
 "          File:  bash-support.vim
 "
-"   Description:  bash support
+"   Description:  Bash support
 "
-"                  Write bash scripts by inserting comments, statements,
+"                  Write Bash scripts by inserting comments, statements,
 "                  variables and builtins.
 "
 "   VIM Version:  7.0+
@@ -12,9 +12,9 @@
 "                 Fritz Mehner <mehner.fritz@web.de>
 "       Version:  see g:BASH_Version below
 "       Created:  26.02.2001
-"      Revision:  21.02.2016
+"      Revision:  22.06.2017
 "       License:  Copyright (c) 2001-2015, Dr. Fritz Mehner
-"                 Copyright (c) 2016-2016, Wolfgang Mehner
+"                 Copyright (c) 2016-2017, Wolfgang Mehner
 "                 This program is free software; you can redistribute it and/or
 "                 modify it under the terms of the GNU General Public License as
 "                 published by the Free Software Foundation, version 2 of the
@@ -25,136 +25,521 @@
 "                 PURPOSE.
 "                 See the GNU General Public License version 2 for more details.
 "===============================================================================
-"
+
+"-------------------------------------------------------------------------------
+" === Basic checks ===   {{{1
+"-------------------------------------------------------------------------------
+
+" need at least 7.0
 if v:version < 700
-  echohl WarningMsg | echo 'plugin bash-support.vim needs Vim version >= 7'| echohl None
-  finish
+	echohl WarningMsg
+	echo 'The plugin bash-support.vim needs Vim version >= 7.'
+	echohl None
+	finish
 endif
-"
-" Prevent duplicate loading:
-"
+
+" prevent duplicate loading
+" need compatible
 if exists("g:BASH_Version") || &cp
- finish
+	finish
 endif
+
+let g:BASH_Version= "4.4pre"                  " version number of this script; do not change
+
+"-------------------------------------------------------------------------------
+" === Auxiliary functions ===   {{{1
+"-------------------------------------------------------------------------------
+
+"-------------------------------------------------------------------------------
+" s:ApplyDefaultSetting : Write default setting to a global variable.   {{{2
 "
-let g:BASH_Version= "4.3"                  " version number of this script; do not change
+" Parameters:
+"   varname - name of the variable (string)
+"   value   - default value (string)
+" Returns:
+"   -
 "
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_SetGlobalVariable     {{{1
-"   DESCRIPTION:  Define a global variable and assign a default value if nor
-"                 already defined
-"    PARAMETERS:  name - global variable
-"                 default - default value
-"===============================================================================
-function! s:BASH_SetGlobalVariable ( name, default )
-  if !exists('g:'.a:name)
-    exe 'let g:'.a:name."  = '".a:default."'"
-	else
-		" check for an empty initialization
-		exe 'let	val	= g:'.a:name
-		if empty(val)
-			exe 'let g:'.a:name."  = '".a:default."'"
-		endif
-  endif
-endfunction   " ---------- end of function  s:BASH_SetGlobalVariable  ----------
+" If g:<varname> does not exists, assign:
+"   g:<varname> = value
+"-------------------------------------------------------------------------------
+
+function! s:ApplyDefaultSetting ( varname, value )
+	if ! exists ( 'g:'.a:varname )
+		let { 'g:'.a:varname } = a:value
+	endif
+endfunction    " ----------  end of function s:ApplyDefaultSetting  ----------
+
+"-------------------------------------------------------------------------------
+" s:ErrorMsg : Print an error message.   {{{2
 "
-"===  FUNCTION  ================================================================
-"          NAME:  GetGlobalSetting     {{{1
-"   DESCRIPTION:  take over a global setting
-"    PARAMETERS:  varname - variable to set
-"       RETURNS:
-"===============================================================================
-function! s:GetGlobalSetting ( varname )
-	if exists ( 'g:'.a:varname )
-		exe 'let s:'.a:varname.' = g:'.a:varname
+" Parameters:
+"   line1 - a line (string)
+"   line2 - a line (string)
+"   ...   - ...
+" Returns:
+"   -
+"-------------------------------------------------------------------------------
+
+function! s:ErrorMsg ( ... )
+	echohl WarningMsg
+	for line in a:000
+		echomsg line
+	endfor
+	echohl None
+endfunction    " ----------  end of function s:ErrorMsg  ----------
+
+"-------------------------------------------------------------------------------
+" s:GetGlobalSetting : Get a setting from a global variable.   {{{2
+"
+" Parameters:
+"   varname - name of the variable (string)
+"   glbname - name of the global variable (string, optional)
+" Returns:
+"   -
+"
+" If 'glbname' is given, it is used as the name of the global variable.
+" Otherwise the global variable will also be named 'varname'.
+"
+" If g:<glbname> exists, assign:
+"   s:<varname> = g:<glbname>
+"-------------------------------------------------------------------------------
+
+function! s:GetGlobalSetting ( varname, ... )
+	let lname = a:varname
+	let gname = a:0 >= 1 ? a:1 : lname
+	if exists ( 'g:'.gname )
+		let { 's:'.lname } = { 'g:'.gname }
 	endif
 endfunction    " ----------  end of function s:GetGlobalSetting  ----------
+
+"-------------------------------------------------------------------------------
+" s:ImportantMsg : Print an important message.   {{{2
 "
-"------------------------------------------------------------------------------
-" *** PLATFORM SPECIFIC ITEMS ***     {{{1
-"------------------------------------------------------------------------------
-let s:MSWIN = has("win16") || has("win32")   || has("win64") || has("win95")
-let s:UNIX	= has("unix")  || has("macunix") || has("win32unix")
+" Parameters:
+"   line1 - a line (string)
+"   line2 - a line (string)
+"   ...   - ...
+" Returns:
+"   -
+"-------------------------------------------------------------------------------
+
+function! s:ImportantMsg ( ... )
+	echohl Search
+	echo join ( a:000, "\n" )
+	echohl None
+endfunction    " ----------  end of function s:ImportantMsg  ----------
+
+"-------------------------------------------------------------------------------
+" s:SID : Return the <SID>.   {{{2
 "
+" Parameters:
+"   -
+" Returns:
+"   SID - the SID of the script (string)
+"-------------------------------------------------------------------------------
+
+function! s:SID ()
+	return matchstr ( expand('<sfile>'), '<SNR>\zs\d\+\ze_SID$' )
+endfunction    " ----------  end of function s:SID  ----------
+
+"-------------------------------------------------------------------------------
+" s:UserInput : Input after a highlighted prompt.   {{{2
+"
+" Parameters:
+"   prompt - the prompt (string)
+"   text - the default input (string)
+"   compl - completion (string, optional)
+"   clist - list, if 'compl' is "customlist" (list, optional)
+" Returns:
+"   input - the user input, an empty sting if the user hit <ESC> (string)
+"-------------------------------------------------------------------------------
+
+function! s:UserInput ( prompt, text, ... )
+
+	echohl Search                                         " highlight prompt
+	call inputsave()                                      " preserve typeahead
+	if a:0 == 0 || a:1 == ''
+		let retval = input( a:prompt, a:text )
+	elseif a:1 == 'customlist'
+		let s:UserInputList = a:2
+		let retval = input( a:prompt, a:text, 'customlist,<SNR>'.s:SID().'_UserInputEx' )
+		let s:UserInputList = []
+	else
+		let retval = input( a:prompt, a:text, a:1 )
+	endif
+	call inputrestore()                                   " restore typeahead
+	echohl None                                           " reset highlighting
+
+	let retval  = substitute( retval, '^\s\+', "", "" )   " remove leading whitespaces
+	let retval  = substitute( retval, '\s\+$', "", "" )   " remove trailing whitespaces
+
+	return retval
+
+endfunction    " ----------  end of function s:UserInput ----------
+
+"-------------------------------------------------------------------------------
+" s:UserInputEx : ex-command for s:UserInput.   {{{3
+"-------------------------------------------------------------------------------
+function! s:UserInputEx ( ArgLead, CmdLine, CursorPos )
+	if empty( a:ArgLead )
+		return copy( s:UserInputList )
+	endif
+	return filter( copy( s:UserInputList ), 'v:val =~ ''\V\<'.escape(a:ArgLead,'\').'\w\*''' )
+endfunction    " ----------  end of function s:UserInputEx  ----------
+" }}}3
+"-------------------------------------------------------------------------------
+
+"-------------------------------------------------------------------------------
+" s:WarningMsg : Print a warning/error message.   {{{2
+"
+" Parameters:
+"   line1 - a line (string)
+"   line2 - a line (string)
+"   ...   - ...
+" Returns:
+"   -
+"-------------------------------------------------------------------------------
+
+function! s:WarningMsg ( ... )
+	echohl WarningMsg
+	echo join ( a:000, "\n" )
+	echohl None
+endfunction    " ----------  end of function s:WarningMsg  ----------
+
+" }}}2
+"-------------------------------------------------------------------------------
+
+"-------------------------------------------------------------------------------
+" === Common functions ===   {{{1
+"-------------------------------------------------------------------------------
+
+"-------------------------------------------------------------------------------
+" s:CodeSnippet : Code snippets.   {{{2
+"
+" Parameters:
+"   action - "insert", "create", "vcreate", "view", or "edit" (string)
+" Returns:
+"   -
+"-------------------------------------------------------------------------------
+function! s:CodeSnippet ( action )
+
+	"-------------------------------------------------------------------------------
+	" setup
+	"-------------------------------------------------------------------------------
+
+	" the snippet directory
+	let cs_dir    = s:BASH_CodeSnippets
+	let cs_browse = s:BASH_GuiSnippetBrowser
+
+	" check directory
+	if ! isdirectory ( cs_dir )
+		return s:ErrorMsg (
+					\ 'Code snippet directory '.cs_dir.' does not exist.',
+					\ '(Please create it.)' )
+	endif
+
+	" save option 'browsefilter'
+	if has( 'browsefilter' ) && exists( 'b:browsefilter' )
+		let browsefilter_save = b:browsefilter
+		let b:browsefilter    = '*'
+	endif
+
+	"-------------------------------------------------------------------------------
+	" do action
+	"-------------------------------------------------------------------------------
+
+	if a:action == 'insert'
+
+		"-------------------------------------------------------------------------------
+		" action "insert"
+		"-------------------------------------------------------------------------------
+
+		" select file
+		if has('browse') && cs_browse == 'gui'
+			let snippetfile = browse ( 0, 'insert a code snippet', cs_dir, '' )
+		else
+			let snippetfile = s:UserInput ( 'insert snippet ', cs_dir, 'file' )
+		endif
+
+		" insert snippet
+		if filereadable(snippetfile)
+			let linesread = line('$')
+
+			let old_cpoptions = &cpoptions            " prevent the alternate buffer from being set to this files
+			setlocal cpoptions-=a
+
+			exe 'read '.snippetfile
+
+			let &cpoptions = old_cpoptions            " restore previous options
+
+			let linesread = line('$') - linesread - 1 " number of lines inserted
+
+			" indent lines
+			if linesread >= 0 && match( snippetfile, '\.\(ni\|noindent\)$' ) < 0
+				silent exe 'normal! ='.linesread.'+'
+			endif
+		endif
+
+		" delete first line if empty
+		if line('.') == 2 && getline(1) =~ '^$'
+			silent exe ':1,1d'
+		endif
+
+	elseif a:action == 'create' || a:action == 'vcreate'
+
+		"-------------------------------------------------------------------------------
+		" action "create" or "vcreate"
+		"-------------------------------------------------------------------------------
+
+		" select file
+		if has('browse') && cs_browse == 'gui'
+			let snippetfile = browse ( 1, 'create a code snippet', cs_dir, '' )
+		else
+			let snippetfile = s:UserInput ( 'create snippet ', cs_dir, 'file' )
+		endif
+
+		" create snippet
+		if ! empty( snippetfile )
+			" new file or overwrite?
+			if ! filereadable( snippetfile ) || confirm( 'File '.snippetfile.' exists! Overwrite? ', "&Cancel\n&No\n&Yes" ) == 3
+				if a:action == 'create' && confirm( 'Write whole file as a snippet? ', "&Cancel\n&No\n&Yes" ) == 3
+					exe 'write! '.fnameescape( snippetfile )
+				elseif a:action == 'vcreate'
+					exe "'<,'>write! ".fnameescape( snippetfile )
+				endif
+			endif
+		endif
+
+	elseif a:action == 'view' || a:action == 'edit'
+
+		"-------------------------------------------------------------------------------
+		" action "view" or "edit"
+		"-------------------------------------------------------------------------------
+		if a:action == 'view' | let saving = 0
+		else                  | let saving = 1 | endif
+
+		" select file
+		if has('browse') && cs_browse == 'gui'
+			let snippetfile = browse ( saving, a:action.' a code snippet', cs_dir, '' )
+		else
+			let snippetfile = s:UserInput ( a:action.' snippet ', cs_dir, 'file' )
+		endif
+
+		" open file
+		if ! empty( snippetfile )
+			exe 'split | '.a:action.' '.fnameescape( snippetfile )
+		endif
+	else
+		call s:ErrorMsg ( 'Unknown action "'.a:action.'".' )
+	endif
+
+	"-------------------------------------------------------------------------------
+	" wrap up
+	"-------------------------------------------------------------------------------
+
+	" restore option 'browsefilter'
+	if has( 'browsefilter' ) && exists( 'b:browsefilter' )
+		let b:browsefilter = browsefilter_save
+	endif
+
+endfunction   " ----------  end of function s:CodeSnippet  ----------
+
+"-------------------------------------------------------------------------------
+" s:Hardcopy : Generate PostScript document from current buffer.   {{{2
+"
+" Under windows, display the printer dialog.
+"
+" Parameters:
+"   mode - "n" : print complete buffer, "v" : print marked area (string)
+" Returns:
+"   -
+"-------------------------------------------------------------------------------
+function! s:Hardcopy ( mode )
+
+	let outfile = expand("%:t")
+
+	" check the buffer
+	if ! s:MSWIN && empty ( outfile )
+		return s:ImportantMsg ( 'The buffer has no filename.' )
+	endif
+
+	" save current settings
+	let printheader_saved = &g:printheader
+
+	let &g:printheader = g:BASH_Printheader
+
+	if s:MSWIN
+		" we simply call hardcopy, which will open the systems printing dialog
+		if a:mode == 'n'
+			silent exe  'hardcopy'
+		elseif a:mode == 'v'
+			silent exe  "'<,'>hardcopy"
+		endif
+	else
+
+		" directory to print to
+		let outdir = getcwd()
+		if filewritable ( outdir ) != 2
+			let outdir = $HOME
+		endif
+
+		let psfile = outdir.'/'.outfile.'.ps'
+
+		if a:mode == 'n'
+			silent exe  'hardcopy > '.psfile
+			call s:ImportantMsg ( 'file "'.outfile.'" printed to "'.psfile.'"' )
+		elseif a:mode == 'v'
+			silent exe  "'<,'>hardcopy > ".psfile
+			call s:ImportantMsg ( 'file "'.outfile.'" (lines '.line("'<").'-'.line("'>").') printed to "'.psfile.'"' )
+		endif
+	endif
+
+	" restore current settings
+	let &g:printheader = printheader_saved
+
+endfunction   " ----------  end of function s:Hardcopy  ----------
+
+"-------------------------------------------------------------------------------
+" s:MakeExecutable : Make the script executable.   {{{2
+"-------------------------------------------------------------------------------
+function! s:MakeExecutable ()
+
+	if ! executable ( 'chmod' )
+		return s:ErrorMsg ( 'Command "chmod" not executable.' )
+	endif
+
+	let filename = expand("%:p")
+
+	if executable ( filename )
+		let from_state = 'executable'
+		let to_state   = 'NOT executable'
+		let cmd        = 'chmod -x'
+	else
+		let from_state = 'NOT executable'
+		let to_state   = 'executable'
+		let cmd        = 'chmod u+x'
+	endif
+
+	if s:UserInput( '"'.filename.'" is '.from_state.'. Make it '.to_state.' [y/n] : ', 'y' ) == 'y'
+
+		" run the command
+		silent exe '!'.cmd.' '.shellescape(filename)
+
+		" successful?
+		if v:shell_error
+			" confirmation for the user
+			call s:ErrorMsg ( 'Could not make "'.filename.'" '.to_state.'!' )
+		else
+			" reload the file, otherwise the message will not be visible
+			if &autoread && ! &l:modified
+				silent exe "edit"
+			endif
+			" confirmation for the user
+			call s:ImportantMsg ( 'Made "'.filename.'" '.to_state.'.' )
+		endif
+		"
+	endif
+
+endfunction   " ----------  end of function s:MakeExecutable  ----------
+
+" }}}2
+"-------------------------------------------------------------------------------
+
+"-------------------------------------------------------------------------------
+" === Module setup ===   {{{1
+"-------------------------------------------------------------------------------
+
+"-------------------------------------------------------------------------------
+" == Platform specific items ==   {{{2
+"-------------------------------------------------------------------------------
+
+let s:MSWIN = has("win16") || has("win32")   || has("win64")     || has("win95")
+let s:UNIX  = has("unix")  || has("macunix") || has("win32unix")
+
 let s:installation            = '*undefined*'
+let s:plugin_dir              = ''
 let s:BASH_GlobalTemplateFile = ''
 let s:BASH_LocalTemplateFile  = ''
 let s:BASH_CustomTemplateFile = ''                " the custom templates
 let s:BASH_FilenameEscChar    = ''
 let s:BASH_XtermDefaults      = '-fa courier -fs 12 -geometry 80x24'
 
+if s:MSWIN
+	" ==========  MS Windows  ======================================================
 
-if	s:MSWIN
-  " ==========  MS Windows  ======================================================
-	"
+	let s:plugin_dir = substitute( expand('<sfile>:p:h:h'), '\', '/', 'g' )
+
 	" change '\' to '/' to avoid interpretation as escape character
 	if match(	substitute( expand("<sfile>"), '\', '/', 'g' ),
 				\		substitute( expand("$HOME"),   '\', '/', 'g' ) ) == 0
 		"
 		" USER INSTALLATION ASSUMED
 		let s:installation            = 'local'
-		let s:BASH_PluginDir          = substitute( expand('<sfile>:p:h:h'), '\', '/', 'g' )
-		let s:BASH_LocalTemplateFile  = s:BASH_PluginDir.'/bash-support/templates/Templates'
+		let s:BASH_LocalTemplateFile  = s:plugin_dir.'/bash-support/templates/Templates'
 		let s:BASH_CustomTemplateFile = $HOME.'/vimfiles/templates/bash.templates'
 	else
 		"
 		" SYSTEM WIDE INSTALLATION
 		let s:installation            = 'system'
-		let s:BASH_PluginDir          = $VIM.'/vimfiles'
-		let s:BASH_GlobalTemplateFile = s:BASH_PluginDir.'/bash-support/templates/Templates'
+		let s:BASH_GlobalTemplateFile = s:plugin_dir.'/bash-support/templates/Templates'
 		let s:BASH_LocalTemplateFile  = $HOME.'/vimfiles/bash-support/templates/Templates'
 		let s:BASH_CustomTemplateFile = $HOME.'/vimfiles/templates/bash.templates'
 	endif
-	"
-  let s:BASH_FilenameEscChar 		= ''
-	let s:BASH_Display    				= ''
-	let s:BASH_ManualReader				= 'man.exe'
-	let s:BASH_Executable					= 'bash.exe'
-	let s:BASH_OutputGvim					= 'xterm'
-	"
+
+	let s:BASH_FilenameEscChar    = ''
+	let s:BASH_Display            = ''
+	let s:BASH_ManualReader       = 'man.exe'
+	let s:BASH_Executable         = 'bash.exe'
+	let s:BASH_OutputGvim         = 'xterm'
 else
-  " ==========  Linux/Unix  ======================================================
-	"
+	" ==========  Linux/Unix  ======================================================
+
+	let s:plugin_dir = expand('<sfile>:p:h:h')
+
 	if match( expand("<sfile>"), resolve( expand("$HOME") ) ) == 0
 		"
 		" USER INSTALLATION ASSUMED
 		let s:installation            = 'local'
-		let s:BASH_PluginDir          = expand('<sfile>:p:h:h')
-		let s:BASH_LocalTemplateFile  = s:BASH_PluginDir.'/bash-support/templates/Templates'
+		let s:BASH_LocalTemplateFile  = s:plugin_dir.'/bash-support/templates/Templates'
 		let s:BASH_CustomTemplateFile = $HOME.'/.vim/templates/bash.templates'
 	else
 		"
 		" SYSTEM WIDE INSTALLATION
 		let s:installation            = 'system'
-		let s:BASH_PluginDir          = $VIM.'/vimfiles'
-		let s:BASH_GlobalTemplateFile = s:BASH_PluginDir.'/bash-support/templates/Templates'
+		let s:BASH_GlobalTemplateFile = s:plugin_dir.'/bash-support/templates/Templates'
 		let s:BASH_LocalTemplateFile  = $HOME.'/.vim/bash-support/templates/Templates'
 		let s:BASH_CustomTemplateFile = $HOME.'/.vim/templates/bash.templates'
 	endif
-	"
-	let s:BASH_Executable					= $SHELL
-  let s:BASH_FilenameEscChar 		= ' \%#[]'
-	let s:BASH_Display						= $DISPLAY
-	let s:BASH_ManualReader				= '/usr/bin/man'
-	let s:BASH_OutputGvim					= 'vim'
-	"
+
+	let s:BASH_Executable         = $SHELL
+	let s:BASH_FilenameEscChar    = ' \%#[]'
+	let s:BASH_Display            = $DISPLAY
+	let s:BASH_ManualReader       = '/usr/bin/man'
+	let s:BASH_OutputGvim         = 'vim'
 endif
 
-let s:BASH_AdditionalTemplates  = mmtemplates#config#GetFt ( 'bash' )
-let s:BASH_CodeSnippets  				= s:BASH_PluginDir.'/bash-support/codesnippets/'
-call s:BASH_SetGlobalVariable( 'BASH_CodeSnippets', s:BASH_CodeSnippets )
+let s:BASH_AdditionalTemplates = mmtemplates#config#GetFt ( 'bash' )
+let s:BASH_CodeSnippets        = s:plugin_dir.'/bash-support/codesnippets/'
 
-"  g:BASH_Dictionary_File  must be global
-if !exists("g:BASH_Dictionary_File")
-	let g:BASH_Dictionary_File     = s:BASH_PluginDir.'/bash-support/wordlists/bash-keywords.list'
-endif
+"-------------------------------------------------------------------------------
+" == Various settings ==   {{{2
+"-------------------------------------------------------------------------------
 
-"----------------------------------------------------------------------
-"  *** MODUL GLOBAL VARIABLES *** {{{1
-"----------------------------------------------------------------------
+"-------------------------------------------------------------------------------
+" Use of dictionaries   {{{3
 "
+" - keyword completion is enabled by the function 's:CreateAdditionalMaps' below
+"-------------------------------------------------------------------------------
+
+if !exists("g:BASH_Dictionary_File")
+	let g:BASH_Dictionary_File = s:plugin_dir.'/bash-support/wordlists/bash-keywords.list'
+endif
+
+"-------------------------------------------------------------------------------
+" User configurable options   {{{3
+"-------------------------------------------------------------------------------
+
 let s:BASH_CreateMenusDelayed	= 'yes'
-let s:BASH_MenuVisible				= 'no'
 let s:BASH_GuiSnippetBrowser 	= 'gui'             " gui / commandline
 let s:BASH_LoadMenus         	= 'yes'             " load the menus?
 let s:BASH_RootMenu          	= '&Bash'           " name of the root menu
@@ -162,22 +547,33 @@ let s:BASH_Debugger           = 'term'
 let s:BASH_bashdb             = 'bashdb'
 "
 let s:BASH_LineEndCommColDefault	= 49
-let s:BASH_Printheader   					= "%<%f%h%m%<  %=%{strftime('%x %X')}     Page %N"
 let s:BASH_TemplateJumpTarget 		= ''
-let s:BASH_Errorformat    				= '%f:\ %[%^0-9]%#\ %l:%m,%f:\ %l:%m,%f:%l:%m,%f[%l]:%m'
-let s:BASH_Wrapper               	= s:BASH_PluginDir.'/bash-support/scripts/wrapper.sh'
-let s:BASH_InsertFileHeader				= 'yes'
+let s:BASH_Errorformat            = '%f: %[%^0-9]%# %l:%m,%f: %l:%m,%f:%l:%m,%f[%l]:%m'
+let s:BASH_Wrapper                = s:plugin_dir.'/bash-support/scripts/wrapper.sh'
+let s:BASH_InsertFileHeader       = 'yes'
+let s:BASH_Ctrl_j                 = 'yes'
+let s:BASH_Ctrl_d                 = 'yes'
 let s:BASH_SyntaxCheckOptionsGlob = ''
-"
+
+if ! exists ( 's:MenuVisible' )
+	let s:MenuVisible = 0                         " menus are not visible at the moment
+endif
+
+"-------------------------------------------------------------------------------
+" Get user configuration   {{{3
+"-------------------------------------------------------------------------------
+
 call s:GetGlobalSetting ( 'BASH_Debugger' )
 call s:GetGlobalSetting ( 'BASH_bashdb' )
 call s:GetGlobalSetting ( 'BASH_SyntaxCheckOptionsGlob' )
 call s:GetGlobalSetting ( 'BASH_Executable' )
 call s:GetGlobalSetting ( 'BASH_InsertFileHeader' )
+call s:GetGlobalSetting ( 'BASH_Ctrl_j' )
+call s:GetGlobalSetting ( 'BASH_Ctrl_d' )
+call s:GetGlobalSetting ( 'BASH_CodeSnippets' )
 call s:GetGlobalSetting ( 'BASH_GuiSnippetBrowser' )
 call s:GetGlobalSetting ( 'BASH_LoadMenus' )
 call s:GetGlobalSetting ( 'BASH_RootMenu' )
-call s:GetGlobalSetting ( 'BASH_Printheader' )
 call s:GetGlobalSetting ( 'BASH_ManualReader' )
 call s:GetGlobalSetting ( 'BASH_OutputGvim' )
 call s:GetGlobalSetting ( 'BASH_XtermDefaults' )
@@ -187,94 +583,44 @@ call s:GetGlobalSetting ( 'BASH_CustomTemplateFile' )
 call s:GetGlobalSetting ( 'BASH_CreateMenusDelayed' )
 call s:GetGlobalSetting ( 'BASH_LineEndCommColDefault' )
 
-call s:BASH_SetGlobalVariable ( 'BASH_MapLeader', '' )       " default: do not overwrite 'maplocalleader'
-"
+call s:ApplyDefaultSetting ( 'BASH_MapLeader', '' )       " default: do not overwrite 'maplocalleader'
+call s:ApplyDefaultSetting ( 'BASH_Printheader', "%<%f%h%m%<  %=%{strftime('%x %X')}     Page %N" )
+
+"-------------------------------------------------------------------------------
+" Xterm   {{{3
+"-------------------------------------------------------------------------------
+
 " set default geometry if not specified
-"
 if match( s:BASH_XtermDefaults, "-geometry\\s\\+\\d\\+x\\d\\+" ) < 0
 	let s:BASH_XtermDefaults	= s:BASH_XtermDefaults." -geometry 80x24"
 endif
-"
-let s:BASH_Printheader  					= escape( s:BASH_Printheader, ' %' )
-let s:BASH_saved_global_option		= {}
-let b:BASH_BashCmdLineArgs				= ''
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_SaveGlobalOption     {{{1
-"   DESCRIPTION:
-"    PARAMETERS:  option name
-"                 characters to be escaped (optional)
-"       RETURNS:
-"===============================================================================
-function! s:BASH_SaveGlobalOption ( option, ... )
-	exe 'let escaped =&'.a:option
-	if a:0 == 0
-		let escaped	= escape( escaped, ' |"\' )
-	else
-		let escaped	= escape( escaped, ' |"\'.a:1 )
-	endif
-	let s:BASH_saved_global_option[a:option]	= escaped
-endfunction    " ----------  end of function BASH_SaveGlobalOption  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_RestoreGlobalOption     {{{1
-"   DESCRIPTION:
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! s:BASH_RestoreGlobalOption ( option )
-	exe ':set '.a:option.'='.s:BASH_saved_global_option[a:option]
-endfunction    " ----------  end of function BASH_RestoreGlobalOption  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_Input     {{{1
-"   DESCRIPTION:  Input after a highlighted prompt
-"    PARAMETERS:  prompt       - prompt string
-"                 defaultreply - default reply
-"                 ...          - completion
-"       RETURNS:  reply
-"===============================================================================
-function! BASH_Input ( prompt, defaultreply, ... )
-	echohl Search																					" highlight prompt
-	call inputsave()																			" preserve typeahead
-	if a:0 == 0 || empty(a:1)
-		let retval	=input( a:prompt, a:defaultreply )
-	else
-		let retval	=input( a:prompt, a:defaultreply, a:1 )
-	endif
-	call inputrestore()																		" restore typeahead
-	echohl None																						" reset highlighting
-	let retval  = substitute( retval, '^\s\+', '', '' )		" remove leading whitespaces
-	let retval  = substitute( retval, '\s\+$', '', '' )		" remove trailing whitespaces
-	return retval
-endfunction    " ----------  end of function BASH_Input ----------
-"
-"------------------------------------------------------------------------------
-"  BASH_AdjustLineEndComm: adjust line-end comments
-"------------------------------------------------------------------------------
-"
+
+" }}}3
+"-------------------------------------------------------------------------------
+
+" }}}2
+"-------------------------------------------------------------------------------
+
+"-------------------------------------------------------------------------------
+" s:AdjustLineEndComm : Adjust end-of-line comments.   {{{1
+"-------------------------------------------------------------------------------
+
 " patterns to ignore when adjusting line-end comments (incomplete):
-let	s:AlignRegex	= [
+let s:AlignRegex = [
 	\	'\$#' ,
 	\	'\${.*}'  ,
 	\	"'\\%(\\\\'\\|[^']\\)*'"  ,
 	\	'"\%(\\.\|[^"]\)*"'  ,
 	\	'`[^`]\+`' ,
 	\	]
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_AdjustLineEndComm     {{{1
-"   DESCRIPTION:  adjust end-of-line comments
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_AdjustLineEndComm ( ) range
-	"
+
+function! s:AdjustLineEndComm ( ) range
+
 	" comment character (for use in regular expression)
 	let cc = '#'                       " start of a Perl comment
 	"
 	" patterns to ignore when adjusting line-end comments (maybe incomplete):
- 	let align_regex	= join( s:AlignRegex, '\|' )
+	let align_regex = join( s:AlignRegex, '\|' )
 	"
 	" local position
 	if !exists( 'b:BASH_LineEndCommentColumn' )
@@ -358,37 +704,31 @@ function! BASH_AdjustLineEndComm ( ) range
 	"
 	" restore the cursor position
 	call setpos ( '.', save_cursor )
-	"
-endfunction		" ---------- end of function  BASH_AdjustLineEndComm  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_GetLineEndCommCol     {{{1
-"   DESCRIPTION:  get end-of-line comment position
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_GetLineEndCommCol ()
-	let actcol	= virtcol(".")
+
+endfunction   " ---------- end of function s:AdjustLineEndComm  ----------
+
+"-------------------------------------------------------------------------------
+" s:GetLineEndCommCol : Set end-of-line comment position.   {{{1
+"-------------------------------------------------------------------------------
+function! s:GetLineEndCommCol ()
+	let actcol = virtcol(".")
 	if actcol+1 == virtcol("$")
-		let	b:BASH_LineEndCommentColumn	= ''
+		let b:BASH_LineEndCommentColumn = ''
 		while match( b:BASH_LineEndCommentColumn, '^\s*\d\+\s*$' ) < 0
-			let b:BASH_LineEndCommentColumn = BASH_Input( 'start line-end comment at virtual column : ', actcol, '' )
+			let b:BASH_LineEndCommentColumn = s:UserInput( 'start line-end comment at virtual column : ', actcol, '' )
 		endwhile
 	else
-		let	b:BASH_LineEndCommentColumn	= virtcol(".")
+		let b:BASH_LineEndCommentColumn = virtcol(".")
 	endif
-  echomsg "line end comments will start at column  ".b:BASH_LineEndCommentColumn
-endfunction		" ---------- end of function  BASH_GetLineEndCommCol  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_EndOfLineComment     {{{1
-"   DESCRIPTION:  single end-of-line comment
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_EndOfLineComment ( ) range
+	echomsg "line end comments will start at column  ".b:BASH_LineEndCommentColumn
+endfunction   " ---------- end of function s:GetLineEndCommCol  ----------
+
+"-------------------------------------------------------------------------------
+" s:EndOfLineComment : Append end-of-line comments.   {{{1
+"-------------------------------------------------------------------------------
+function! s:EndOfLineComment ( ) range
 	if !exists("b:BASH_LineEndCommentColumn")
-		let	b:BASH_LineEndCommentColumn	= s:BASH_LineEndCommColDefault
+		let b:BASH_LineEndCommentColumn = s:BASH_LineEndCommColDefault
 	endif
 	" ----- trim whitespaces -----
 	exe a:firstline.','.a:lastline.'s/\s*$//'
@@ -396,23 +736,20 @@ function! BASH_EndOfLineComment ( ) range
 	for line in range( a:lastline, a:firstline, -1 )
 		silent exe ":".line
 		if getline(line) !~ '^\s*$'
-			let linelength	= virtcol( [line, "$"] ) - 1
-			let	diff				= 1
+			let linelength = virtcol( [line, "$"] ) - 1
+			let diff = 1
 			if linelength < b:BASH_LineEndCommentColumn
-				let diff	= b:BASH_LineEndCommentColumn -1 -linelength
+				let diff = b:BASH_LineEndCommentColumn -1 -linelength
 			endif
-			exe "normal!	".diff."A "
+			exe "normal! ".diff."A "
 			call mmtemplates#core#InsertTemplate(g:BASH_Templates, 'Comments.end-of-line comment')
 		endif
 	endfor
-endfunction		" ---------- end of function  BASH_EndOfLineComment  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  s:CodeComment     {{{1
-"   DESCRIPTION:  Code -> Comment
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
+endfunction   " ---------- end of function s:EndOfLineComment  ----------
+
+"-------------------------------------------------------------------------------
+" s:CodeComment : Code -> Comment   {{{1
+"-------------------------------------------------------------------------------
 function! s:CodeComment() range
 	" add '#' at the beginning of the lines
 	for line in range( a:firstline, a:lastline )
@@ -420,12 +757,12 @@ function! s:CodeComment() range
 	endfor
 endfunction    " ----------  end of function s:CodeComment  ----------
 
-"===  FUNCTION  ================================================================
-"          NAME:  s:CommentCode     {{{1
-"   DESCRIPTION:  Comment -> Code
-"    PARAMETERS:  toggle - 0 : uncomment, 1 : toggle comment
-"       RETURNS:
-"===============================================================================
+"-------------------------------------------------------------------------------
+" s:CommentCode : Comment -> Code   {{{1
+"
+" Parameters:
+"   toggle - 0 : uncomment, 1 : toggle comment (integer)
+"-------------------------------------------------------------------------------
 function! s:CommentCode( toggle ) range
 	for i in range( a:firstline, a:lastline )
 		" :TRICKY:15.08.2014 17:17:WM:
@@ -443,35 +780,41 @@ function! s:CommentCode( toggle ) range
 	endfor
 endfunction    " ----------  end of function s:CommentCode  ----------
 
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_echo_comment     {{{1
-"   DESCRIPTION:  put statement in an echo
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_echo_comment ()
+"-------------------------------------------------------------------------------
+" s:EchoComment : Put statement in an echo.   {{{1
+"-------------------------------------------------------------------------------
+function! s:EchoComment ()
 	let	line	= escape( getline("."), '"' )
 	let	line	= substitute( line, '^\s*', '', '' )
 	call setline( line("."), 'echo "'.line.'"' )
 	silent exe "normal! =="
 	return
-endfunction    " ----------  end of function BASH_echo_comment  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_remove_echo     {{{1
-"   DESCRIPTION:  remove echo from statement
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_remove_echo ()
+endfunction   " ---------- end of function s:EchoComment  ----------
+
+"-------------------------------------------------------------------------------
+" s:RemoveEcho : Remove echo from statement.   {{{1
+"-------------------------------------------------------------------------------
+function! s:RemoveEcho ()
 	let	line	= substitute( getline("."), '\\"', '"', 'g' )
 	let	line	= substitute( line, '^\s*echo\s\+"', '', '' )
 	let	line	= substitute( line, '"$', '', '' )
 	call setline( line("."), line )
 	silent exe "normal! =="
 	return
-endfunction    " ----------  end of function BASH_remove_echo  ----------
-"
+endfunction   " ---------- end of function s:RemoveEcho  ----------
+
+"-------------------------------------------------------------------------------
+" s:HelpPlugin : Plug-in help.   {{{1
+"-------------------------------------------------------------------------------
+function! s:HelpPlugin ()
+	try
+		help bashsupport
+	catch
+		exe 'helptags '.s:plugin_dir.'/doc'
+		help bashsupport
+	endtry
+endfunction   " ----------  end of function s:HelpPlugin ----------
+
 "------------------------------------------------------------------------------
 "  === Templates API ===   {{{1
 "------------------------------------------------------------------------------
@@ -494,15 +837,11 @@ function! Bash_ResetMapLeader ()
 	endif
 endfunction    " ----------  end of function Bash_ResetMapLeader  ----------
 " }}}2
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_RereadTemplates     {{{1
-"   DESCRIPTION:  Reread the templates. Also set the character which starts
-"                 the comments in the template files.
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_RereadTemplates ()
+
+"-------------------------------------------------------------------------------
+" s:RereadTemplates : Initial loading of the templates.   {{{1
+"-------------------------------------------------------------------------------
+function! s:RereadTemplates ()
 
 	"-------------------------------------------------------------------------------
 	" setup template library
@@ -519,9 +858,9 @@ function! BASH_RereadTemplates ()
 	" some metainfo
 	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::PluginName',   'Bash' )
 	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::FiletypeName', 'Bash' )
-	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::FileCustomNoPersonal',   s:BASH_PluginDir.'/bash-support/rc/custom.templates' )
-	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::FileCustomWithPersonal', s:BASH_PluginDir.'/bash-support/rc/custom_with_personal.templates' )
-	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::FilePersonal',           s:BASH_PluginDir.'/bash-support/rc/personal.templates' )
+	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::FileCustomNoPersonal',   s:plugin_dir.'/bash-support/rc/custom.templates' )
+	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::FileCustomWithPersonal', s:plugin_dir.'/bash-support/rc/custom_with_personal.templates' )
+	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::FilePersonal',           s:plugin_dir.'/bash-support/rc/personal.templates' )
 	call mmtemplates#core#Resource ( g:BASH_Templates, 'set', 'property', 'Templates::Wizard::CustomFileVariable',     'g:BASH_CustomTemplateFile' )
 
 	" maps: special operations
@@ -531,6 +870,9 @@ function! BASH_RereadTemplates ()
 
 	" syntax: comments
 	call mmtemplates#core#ChangeSyntax ( g:BASH_Templates, 'comment', '§' )
+
+	" property: file skeletons
+	call mmtemplates#core#Resource ( g:BASH_Templates, 'add', 'property', 'Bash::FileSkeleton::Script', 'Comments.shebang;Comments.file header; ;Skeleton.script-set' )
 
 	"-------------------------------------------------------------------------------
 	" load template library
@@ -571,37 +913,100 @@ function! BASH_RereadTemplates ()
 	" get the jump tags
 	let s:BASH_TemplateJumpTarget = mmtemplates#core#Resource ( g:BASH_Templates, "jumptag" )[0]
 
-endfunction    " ----------  end of function BASH_RereadTemplates  ----------
+	" get the builtin list
+	let l = mmtemplates#core#Resource ( g:BASH_Templates, 'get', 'list', 'builtins' )
 
-"===  FUNCTION  ================================================================
-"          NAME:  s:CheckTemplatePersonalization     {{{1
-"   DESCRIPTION:  check whether the name, .. has been set
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
+	if l[1] == ''
+		let s:BuiltinList = l[0]
+	else
+		call s:ErrorMsg ( l[1] )
+	endif
+
+endfunction    " ----------  end of function s:RereadTemplates  ----------
+
+"-------------------------------------------------------------------------------
+" s:CheckTemplatePersonalization : Check whether the name, .. has been set.   {{{1
+"-------------------------------------------------------------------------------
+
 let s:DoneCheckTemplatePersonalization = 0
 
 function! s:CheckTemplatePersonalization ()
 
 	" check whether the templates are personalized
-	if ! s:DoneCheckTemplatePersonalization
-				\ && mmtemplates#core#ExpandText ( g:BASH_Templates, '|AUTHOR|' ) == 'YOUR NAME'
-		let s:DoneCheckTemplatePersonalization = 1
-
-		let maplead = mmtemplates#core#Resource ( g:BASH_Templates, 'get', 'property', 'Templates::Mapleader' )[0]
-
-		redraw
-		echohl Search
-		echo 'The personal details (name, mail, ...) are not set in the template library.'
-		echo 'They are used to generate comments, ...'
-		echo 'To set them, start the setup wizard using:'
-		echo '- use the menu entry "Bash -> Snippets -> template setup wizard"'
-		echo '- use the map "'.maplead.'ntw" inside a Bash buffer'
-		echo "\n"
-		echohl None
+	if s:DoneCheckTemplatePersonalization
+				\ || mmtemplates#core#ExpandText ( g:BASH_Templates, '|AUTHOR|' ) != 'YOUR NAME'
+				\ || s:BASH_InsertFileHeader != 'yes'
+		return
 	endif
 
+	let s:DoneCheckTemplatePersonalization = 1
+
+	let maplead = mmtemplates#core#Resource ( g:BASH_Templates, 'get', 'property', 'Templates::Mapleader' )[0]
+
+	redraw
+	call s:ImportantMsg ( 'The personal details are not set in the template library. Use the map "'.maplead.'ntw".' )
+
 endfunction    " ----------  end of function s:CheckTemplatePersonalization  ----------
+
+"-------------------------------------------------------------------------------
+" s:CheckAndRereadTemplates : Make sure the templates are loaded.   {{{1
+"-------------------------------------------------------------------------------
+function! s:CheckAndRereadTemplates ()
+	if ! exists ( 'g:BASH_Templates' )
+		call s:RereadTemplates()
+	endif
+endfunction    " ----------  end of function s:CheckAndRereadTemplates  ----------
+
+"-------------------------------------------------------------------------------
+" s:InsertFileHeader : Insert a file header.   {{{1
+"-------------------------------------------------------------------------------
+function! s:InsertFileHeader ()
+	call s:CheckAndRereadTemplates()
+
+	" prevent insertion for a file generated from a some error
+	if isdirectory(expand('%:p:h')) && s:BASH_InsertFileHeader == 'yes'
+		let templ_s = mmtemplates#core#Resource ( g:BASH_Templates, 'get', 'property', 'Bash::FileSkeleton::Script' )[0]
+
+		" insert templates in reverse order, always above the first line
+		" the last one to insert (the first in the list), will determine the
+		" placement of the cursor
+		let templ_l = split ( templ_s, ';' )
+		for i in range ( len(templ_l)-1, 0, -1 )
+			exe 1
+			if -1 != match ( templ_l[i], '^\s\+$' )
+				put! =''
+			else
+				call mmtemplates#core#InsertTemplate ( g:BASH_Templates, templ_l[i], 'placement', 'above' )
+			endif
+		endfor
+		if len(templ_l) > 0
+			set modified
+		endif
+	endif
+endfunction    " ----------  end of function s:InsertFileHeader  ----------
+
+"-------------------------------------------------------------------------------
+" s:JumpForward : Jump to the next target.   {{{1
+"
+" If no target is found, jump behind the current string
+"
+" Parameters:
+"   -
+" Returns:
+"   empty sting
+"-------------------------------------------------------------------------------
+function! s:JumpForward ()
+	let match = search( s:BASH_TemplateJumpTarget, 'c' )
+	if match > 0
+		" remove the target
+		call setline( match, substitute( getline('.'), s:BASH_TemplateJumpTarget, '', '' ) )
+	else
+		" try to jump behind parenthesis or strings
+		call search( "[\]})\"'`]", 'W' )
+		normal! l
+	endif
+	return ''
+endfunction    " ----------  end of function s:JumpForward  ----------
 
 "===  FUNCTION  ================================================================
 "          NAME:  InitMenus     {{{1
@@ -645,13 +1050,13 @@ function! s:InitMenus()
 	let vhead = 'vnoremenu <silent> '.s:BASH_RootMenu.'.Comments.'
 	let ihead = 'inoremenu <silent> '.s:BASH_RootMenu.'.Comments.'
 	"
-	exe ahead.'end-of-&line\ comment<Tab>'.esc_mapl.'cl                 :call BASH_EndOfLineComment()<CR>'
-	exe vhead.'end-of-&line\ comment<Tab>'.esc_mapl.'cl                 :call BASH_EndOfLineComment()<CR>'
+	exe ahead.'end-of-&line\ comment<Tab>'.esc_mapl.'cl                 :call <SID>EndOfLineComment()<CR>'
+	exe vhead.'end-of-&line\ comment<Tab>'.esc_mapl.'cl                 :call <SID>EndOfLineComment()<CR>'
 
-	exe ahead.'ad&just\ end-of-line\ com\.<Tab>'.esc_mapl.'cj           :call BASH_AdjustLineEndComm()<CR>'
-	exe ihead.'ad&just\ end-of-line\ com\.<Tab>'.esc_mapl.'cj      <Esc>:call BASH_AdjustLineEndComm()<CR>'
-	exe vhead.'ad&just\ end-of-line\ com\.<Tab>'.esc_mapl.'cj           :call BASH_AdjustLineEndComm()<CR>'
-	exe  head.'&set\ end-of-line\ com\.\ col\.<Tab>'.esc_mapl.'cs  <Esc>:call BASH_GetLineEndCommCol()<CR>'
+	exe ahead.'ad&just\ end-of-line\ com\.<Tab>'.esc_mapl.'cj           :call <SID>AdjustLineEndComm()<CR>'
+	exe ihead.'ad&just\ end-of-line\ com\.<Tab>'.esc_mapl.'cj      <Esc>:call <SID>AdjustLineEndComm()<CR>'
+	exe vhead.'ad&just\ end-of-line\ com\.<Tab>'.esc_mapl.'cj           :call <SID>AdjustLineEndComm()<CR>'
+	exe  head.'&set\ end-of-line\ com\.\ col\.<Tab>'.esc_mapl.'cs  <Esc>:call <SID>GetLineEndCommCol()<CR>'
 	"
 	exe ahead.'-Sep01-						<Nop>'
 	exe ahead.'&comment<TAB>'.esc_mapl.'cc															:call <SID>CodeComment()<CR>'
@@ -669,24 +1074,26 @@ function! s:InitMenus()
 	"-------------------------------------------------------------------------------
 	" snippets     {{{2
 	"-------------------------------------------------------------------------------
-	"
+
 	if !empty(s:BASH_CodeSnippets)
-		"
-		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&read\ code\ snippet<Tab>'.esc_mapl.'nr       :call BASH_CodeSnippet("read")<CR>'
-		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&read\ code\ snippet<Tab>'.esc_mapl.'nr  <C-C>:call BASH_CodeSnippet("read")<CR>'
-		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&view\ code\ snippet<Tab>'.esc_mapl.'nv       :call BASH_CodeSnippet("view")<CR>'
-		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&view\ code\ snippet<Tab>'.esc_mapl.'nv  <C-C>:call BASH_CodeSnippet("view")<CR>'
-		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&write\ code\ snippet<Tab>'.esc_mapl.'nw      :call BASH_CodeSnippet("write")<CR>'
-		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&write\ code\ snippet<Tab>'.esc_mapl.'nw <C-C>:call BASH_CodeSnippet("write")<CR>'
-		exe "vmenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&write\ code\ snippet<Tab>'.esc_mapl.'nw <C-C>:call BASH_CodeSnippet("writemarked")<CR>'
-		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&edit\ code\ snippet<Tab>'.esc_mapl.'ne       :call BASH_CodeSnippet("edit")<CR>'
-		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&edit\ code\ snippet<Tab>'.esc_mapl.'ne  <C-C>:call BASH_CodeSnippet("edit")<CR>'
+		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&read\ code\ snippet<Tab>'.esc_mapl.'nr       :call <SID>CodeSnippet("insert")<CR>'
+		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&read\ code\ snippet<Tab>'.esc_mapl.'nr  <C-C>:call <SID>CodeSnippet("insert")<CR>'
+		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&view\ code\ snippet<Tab>'.esc_mapl.'nv       :call <SID>CodeSnippet("view")<CR>'
+		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&view\ code\ snippet<Tab>'.esc_mapl.'nv  <C-C>:call <SID>CodeSnippet("view")<CR>'
+		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&write\ code\ snippet<Tab>'.esc_mapl.'nw      :call <SID>CodeSnippet("create")<CR>'
+		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&write\ code\ snippet<Tab>'.esc_mapl.'nw <C-C>:call <SID>CodeSnippet("create")<CR>'
+		exe "vmenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&write\ code\ snippet<Tab>'.esc_mapl.'nw <C-C>:call <SID>CodeSnippet("vcreate")<CR>'
+		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&edit\ code\ snippet<Tab>'.esc_mapl.'ne       :call <SID>CodeSnippet("edit")<CR>'
+		exe "imenu  <silent> ".s:BASH_RootMenu.'.S&nippets.&edit\ code\ snippet<Tab>'.esc_mapl.'ne  <C-C>:call <SID>CodeSnippet("edit")<CR>'
 		exe "amenu  <silent> ".s:BASH_RootMenu.'.S&nippets.-SepSnippets-                       :'
-		"
 	endif
-	"
+
+	"-------------------------------------------------------------------------------
+	" templates
+	"-------------------------------------------------------------------------------
+
 	call mmtemplates#core#CreateMenus ( 'g:BASH_Templates', s:BASH_RootMenu, 'do_specials', 'specials_menu', 'S&nippets' )
-	"
+
 	"-------------------------------------------------------------------------------
 	" run     {{{2
 	"-------------------------------------------------------------------------------
@@ -712,18 +1119,18 @@ function! s:InitMenus()
 	"
 	if	!s:MSWIN
 		exe "amenu <silent> ".s:BASH_RootMenu.'.&Run.start\ &debugger<Tab><F9>\ \ '.esc_mapl.'rd           :call BASH_Debugger()<CR>'
-		exe "amenu <silent> ".s:BASH_RootMenu.'.&Run.make\ script\ &exec\./not\ exec\.<Tab>'.esc_mapl.'re          :call BASH_MakeScriptExecutable()<CR>'
+		exe "amenu <silent> ".s:BASH_RootMenu.'.&Run.make\ script\ &exec\./not\ exec\.<Tab>'.esc_mapl.'re          :call <SID>MakeExecutable()<CR>'
 	endif
-	"
+
 	exe ahead.'-SEP1-   :'
 	if	s:MSWIN
-		exe ahead.'&hardcopy\ to\ printer<Tab>'.esc_mapl.'rh        <C-C>:call BASH_Hardcopy("n")<CR>'
-		exe vhead.'&hardcopy\ to\ printer<Tab>'.esc_mapl.'rh        <C-C>:call BASH_Hardcopy("v")<CR>'
+		exe ahead.'&hardcopy\ to\ printer<Tab>'.esc_mapl.'rh        <C-C>:call <SID>Hardcopy("n")<CR>'
+		exe vhead.'&hardcopy\ to\ printer<Tab>'.esc_mapl.'rh        <C-C>:call <SID>Hardcopy("v")<CR>'
 	else
-		exe ahead.'&hardcopy\ to\ FILENAME\.ps<Tab>'.esc_mapl.'rh   <C-C>:call BASH_Hardcopy("n")<CR>'
-		exe vhead.'&hardcopy\ to\ FILENAME\.ps<Tab>'.esc_mapl.'rh   <C-C>:call BASH_Hardcopy("v")<CR>'
+		exe ahead.'&hardcopy\ to\ FILENAME\.ps<Tab>'.esc_mapl.'rh   <C-C>:call <SID>Hardcopy("n")<CR>'
+		exe vhead.'&hardcopy\ to\ FILENAME\.ps<Tab>'.esc_mapl.'rh   <C-C>:call <SID>Hardcopy("v")<CR>'
 	endif
-	"
+
 	exe ahead.'-SEP2-                                                 :'
 	exe ahead.'plugin\ &settings<Tab>'.esc_mapl.'rs                   :call BASH_Settings(0)<CR>'
 	"
@@ -758,10 +1165,10 @@ function! s:InitMenus()
  	"-------------------------------------------------------------------------------
  	" comments     {{{2
  	"-------------------------------------------------------------------------------
-	exe " noremenu ".s:BASH_RootMenu.'.&Comments.&echo\ "<line>"<Tab>'.esc_mapl.'ce       :call BASH_echo_comment()<CR>j'
-	exe "inoremenu ".s:BASH_RootMenu.'.&Comments.&echo\ "<line>"<Tab>'.esc_mapl.'ce  <C-C>:call BASH_echo_comment()<CR>j'
-	exe " noremenu ".s:BASH_RootMenu.'.&Comments.&remove\ echo<Tab>'.esc_mapl.'cr         :call BASH_remove_echo()<CR>j'
-	exe "inoremenu ".s:BASH_RootMenu.'.&Comments.&remove\ echo<Tab>'.esc_mapl.'cr    <C-C>:call BASH_remove_echo()<CR>j'
+	exe " noremenu ".s:BASH_RootMenu.'.&Comments.&echo\ "<line>"<Tab>'.esc_mapl.'ce       :call <SID>EchoComment()<CR>j'
+	exe "inoremenu ".s:BASH_RootMenu.'.&Comments.&echo\ "<line>"<Tab>'.esc_mapl.'ce  <C-C>:call <SID>EchoComment()<CR>j'
+	exe " noremenu ".s:BASH_RootMenu.'.&Comments.&remove\ echo<Tab>'.esc_mapl.'cr         :call <SID>RemoveEcho()<CR>j'
+	exe "inoremenu ".s:BASH_RootMenu.'.&Comments.&remove\ echo<Tab>'.esc_mapl.'cr    <C-C>:call <SID>RemoveEcho()<CR>j'
 	"
  	"-------------------------------------------------------------------------------
  	" help     {{{2
@@ -777,156 +1184,13 @@ function! s:InitMenus()
 	exe "imenu  <silent>  ".s:BASH_RootMenu.'.&Help.&manual\ (utilities)<Tab>'.esc_mapl.'hm        <C-C>:call BASH_help("man")<CR>'
 	"
 	exe " menu  <silent>  ".s:BASH_RootMenu.'.&Help.-SEP1-                                              :'
-	exe " menu  <silent>  ".s:BASH_RootMenu.'.&Help.help\ (Bash-&Support)<Tab>'.esc_mapl.'hbs           :call BASH_HelpBashSupport()<CR>'
-	exe "imenu  <silent>  ".s:BASH_RootMenu.'.&Help.help\ (Bash-&Support)<Tab>'.esc_mapl.'hbs      <C-C>:call BASH_HelpBashSupport()<CR>'
-	"
-endfunction    " ----------  end of function s:InitMenus  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_JumpForward     {{{1
-"   DESCRIPTION:  Jump to the next target, otherwise behind the current string.
-"    PARAMETERS:  -
-"       RETURNS:  empty string
-"===============================================================================
-function! BASH_JumpForward ()
-  let match	= search( s:BASH_TemplateJumpTarget, 'c' )
-	if match > 0
-		" remove the target
-		call setline( match, substitute( getline('.'), s:BASH_TemplateJumpTarget, '', '' ) )
-	else
-		" try to jump behind parenthesis or strings
-		call search( "[\]})\"'`]", 'W' )
-		normal! l
-	endif
-	return ''
-endfunction    " ----------  end of function BASH_JumpForward  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_CodeSnippet     {{{1
-"   DESCRIPTION:  read / write / edit code sni
-"    PARAMETERS:  mode - edit, read, write, writemarked, view
-"===============================================================================
-function! BASH_CodeSnippet(mode)
-  if isdirectory(g:BASH_CodeSnippets)
-    "
-    " read snippet file, put content below current line
-    "
-    if a:mode == "read"
-			if has("gui_running") && s:BASH_GuiSnippetBrowser == 'gui'
-				let l:snippetfile=browse(0,"read a code snippet",g:BASH_CodeSnippets,"")
-			else
-				let	l:snippetfile=input("read snippet ", g:BASH_CodeSnippets, "file" )
-			endif
-      if filereadable(l:snippetfile)
-        let linesread= line("$")
-        let l:old_cpoptions = &cpoptions " Prevent the alternate buffer from being set to this files
-        setlocal cpoptions-=a
-        :execute "read ".l:snippetfile
-        let &cpoptions  = l:old_cpoptions   " restore previous options
-        "
-        let linesread= line("$")-linesread-1
-        if linesread>=0 && match( l:snippetfile, '\.\(ni\|noindent\)$' ) < 0
-          silent exe "normal! =".linesread."+"
-        endif
-      endif
-    endif
-    "
-    " update current buffer / split window / edit snippet file
-    "
-    if a:mode == "edit"
-			if has("gui_running") && s:BASH_GuiSnippetBrowser == 'gui'
-				let l:snippetfile=browse(0,"edit a code snippet",g:BASH_CodeSnippets,"")
-			else
-				let	l:snippetfile=input("edit snippet ", g:BASH_CodeSnippets, "file" )
-			endif
-      if !empty(l:snippetfile)
-        :execute "update! | split | edit ".l:snippetfile
-      endif
-    endif
-    "
-    " update current buffer / split window / view snippet file
-    "
-    if a:mode == "view"
-			if has("gui_running") && s:BASH_GuiSnippetBrowser == 'gui'
-				let l:snippetfile=browse(0,"view a code snippet",g:BASH_CodeSnippets,"")
-			else
-				let	l:snippetfile=input("view snippet ", g:BASH_CodeSnippets, "file" )
-			endif
-      if !empty(l:snippetfile)
-        :execute "update! | split | view ".l:snippetfile
-      endif
-    endif
-    "
-    " write whole buffer or marked area into snippet file
-    "
-    if a:mode == "write" || a:mode == "writemarked"
-			if has("gui_running") && s:BASH_GuiSnippetBrowser == 'gui'
-				let l:snippetfile=browse(1,"write a code snippet",g:BASH_CodeSnippets,"")
-			else
-				let	l:snippetfile=input("write snippet ", g:BASH_CodeSnippets, "file" )
-			endif
-      if !empty(l:snippetfile)
-        if filereadable(l:snippetfile)
-          if confirm("File ".l:snippetfile." exists ! Overwrite ? ", "&Cancel\n&No\n&Yes") != 3
-            return
-          endif
-        endif
-				if a:mode == "write"
-					:execute ":write! ".l:snippetfile
-				else
-					:execute ":*write! ".l:snippetfile
-				endif
-      endif
-    endif
+	exe " menu  <silent>  ".s:BASH_RootMenu.'.&Help.help\ (Bash-&Support)<Tab>'.esc_mapl.'hbs           :call <SID>HelpPlugin()<CR>'
+	exe "imenu  <silent>  ".s:BASH_RootMenu.'.&Help.help\ (Bash-&Support)<Tab>'.esc_mapl.'hbs      <C-C>:call <SID>HelpPlugin()<CR>'
+	" }}}2
+	"-------------------------------------------------------------------------------
 
-  else
-    redraw!
-    echohl ErrorMsg
-    echo "code snippet directory ".g:BASH_CodeSnippets." does not exist"
-    echohl None
-  endif
-endfunction   " ---------- end of function  BASH_CodeSnippet  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_Hardcopy     {{{1
-"   DESCRIPTION:  Make PostScript document from current buffer
-"                 MSWIN : display printer dialog
-"    PARAMETERS:  mode - n : print complete buffer, v : print marked area
-"       RETURNS:
-"===============================================================================
-function! BASH_Hardcopy (mode)
-  let outfile = expand("%")
-  if outfile == ""
-    redraw
-    echohl WarningMsg | echo " no file name " | echohl None
-    return
-  endif
-	let outdir	= getcwd()
-	if filewritable(outdir) != 2
-		let outdir	= $HOME
-	endif
-	if  !s:MSWIN
-		let outdir	= outdir.'/'
-	endif
-  let old_printheader=&printheader
-  exe  ':set printheader='.s:BASH_Printheader
-  " ----- normal mode ----------------
-  if a:mode=="n"
-    silent exe  'hardcopy > '.outdir.outfile.'.ps'
-    if  !s:MSWIN
-      echo 'file "'.outfile.'" printed to "'.outdir.outfile.'.ps"'
-    endif
-  endif
-  " ----- visual mode ----------------
-  if a:mode=="v"
-    silent exe  "*hardcopy > ".outdir.outfile.".ps"
-    if  !s:MSWIN
-      echo 'file "'.outfile.'" (lines '.line("'<").'-'.line("'>").') printed to "'.outdir.outfile.'.ps"'
-    endif
-  endif
-  exe  ':set printheader='.escape( old_printheader, ' %' )
-endfunction   " ---------- end of function  BASH_Hardcopy  ----------
-"
+endfunction    " ----------  end of function s:InitMenus  ----------
+
 "===  FUNCTION  ================================================================
 "          NAME:  CreateAdditionalMaps     {{{1
 "   DESCRIPTION:  create additional maps
@@ -962,17 +1226,17 @@ function! s:CreateAdditionalMaps ()
 	"-------------------------------------------------------------------------------
 	" comments
 	"-------------------------------------------------------------------------------
-	nnoremap  <buffer>  <silent>  <LocalLeader>cl         :call BASH_EndOfLineComment()<CR>
-	inoremap  <buffer>  <silent>  <LocalLeader>cl    <C-C>:call BASH_EndOfLineComment()<CR>
-	vnoremap  <buffer>  <silent>  <LocalLeader>cl         :call BASH_EndOfLineComment()<CR>
+	nnoremap  <buffer>  <silent>  <LocalLeader>cl         :call <SID>EndOfLineComment()<CR>
+	inoremap  <buffer>  <silent>  <LocalLeader>cl    <C-C>:call <SID>EndOfLineComment()<CR>
+	vnoremap  <buffer>  <silent>  <LocalLeader>cl         :call <SID>EndOfLineComment()<CR>
 	"
-	nnoremap  <buffer>  <silent>  <LocalLeader>cj         :call BASH_AdjustLineEndComm()<CR>
-	inoremap  <buffer>  <silent>  <LocalLeader>cj    <C-C>:call BASH_AdjustLineEndComm()<CR>
-	vnoremap  <buffer>  <silent>  <LocalLeader>cj         :call BASH_AdjustLineEndComm()<CR>
+	nnoremap  <buffer>  <silent>  <LocalLeader>cj         :call <SID>AdjustLineEndComm()<CR>
+	inoremap  <buffer>  <silent>  <LocalLeader>cj    <C-C>:call <SID>AdjustLineEndComm()<CR>
+	vnoremap  <buffer>  <silent>  <LocalLeader>cj         :call <SID>AdjustLineEndComm()<CR>
 	"
-	nnoremap  <buffer>  <silent>  <LocalLeader>cs         :call BASH_GetLineEndCommCol()<CR>
-	inoremap  <buffer>  <silent>  <LocalLeader>cs    <C-C>:call BASH_GetLineEndCommCol()<CR>
-	vnoremap  <buffer>  <silent>  <LocalLeader>cs    <C-C>:call BASH_GetLineEndCommCol()<CR>
+	nnoremap  <buffer>  <silent>  <LocalLeader>cs         :call <SID>GetLineEndCommCol()<CR>
+	inoremap  <buffer>  <silent>  <LocalLeader>cs    <C-C>:call <SID>GetLineEndCommCol()<CR>
+	vnoremap  <buffer>  <silent>  <LocalLeader>cs    <C-C>:call <SID>GetLineEndCommCol()<CR>
 
 	nnoremap  <buffer>  <silent>  <LocalLeader>cc         :call <SID>CodeComment()<CR>
 	inoremap  <buffer>  <silent>  <LocalLeader>cc    <C-C>:call <SID>CodeComment()<CR>
@@ -988,25 +1252,25 @@ function! s:CreateAdditionalMaps ()
 	inoremap  <buffer>  <silent>  <LocalLeader>cu    <C-C>:call <SID>CommentCode(0)<CR>
 	vnoremap  <buffer>  <silent>  <LocalLeader>cu         :call <SID>CommentCode(0)<CR>
 
-   noremap  <buffer>  <silent>  <LocalLeader>ce         :call BASH_echo_comment()<CR>j'
-  inoremap  <buffer>  <silent>  <LocalLeader>ce    <C-C>:call BASH_echo_comment()<CR>j'
-   noremap  <buffer>  <silent>  <LocalLeader>cr         :call BASH_remove_echo()<CR>j'
-  inoremap  <buffer>  <silent>  <LocalLeader>cr    <C-C>:call BASH_remove_echo()<CR>j'
+   noremap  <buffer>  <silent>  <LocalLeader>ce         :call <SID>EchoComment()<CR>j'
+  inoremap  <buffer>  <silent>  <LocalLeader>ce    <C-C>:call <SID>EchoComment()<CR>j'
+   noremap  <buffer>  <silent>  <LocalLeader>cr         :call <SID>RemoveEcho()<CR>j'
+  inoremap  <buffer>  <silent>  <LocalLeader>cr    <C-C>:call <SID>RemoveEcho()<CR>j'
 
 	"-------------------------------------------------------------------------------
 	" snippets
 	"-------------------------------------------------------------------------------
-	"
-	nnoremap    <buffer>  <silent>  <LocalLeader>nr         :call BASH_CodeSnippet("read")<CR>
-	inoremap    <buffer>  <silent>  <LocalLeader>nr    <Esc>:call BASH_CodeSnippet("read")<CR>
-	nnoremap    <buffer>  <silent>  <LocalLeader>nw         :call BASH_CodeSnippet("write")<CR>
-	inoremap    <buffer>  <silent>  <LocalLeader>nw    <Esc>:call BASH_CodeSnippet("write")<CR>
-	vnoremap    <buffer>  <silent>  <LocalLeader>nw    <Esc>:call BASH_CodeSnippet("writemarked")<CR>
-	nnoremap    <buffer>  <silent>  <LocalLeader>ne         :call BASH_CodeSnippet("edit")<CR>
-	inoremap    <buffer>  <silent>  <LocalLeader>ne    <Esc>:call BASH_CodeSnippet("edit")<CR>
-	nnoremap    <buffer>  <silent>  <LocalLeader>nv         :call BASH_CodeSnippet("view")<CR>
-	inoremap    <buffer>  <silent>  <LocalLeader>nv    <Esc>:call BASH_CodeSnippet("view")<CR>
-	"
+
+	nnoremap    <buffer>  <silent>  <LocalLeader>nr         :call <SID>CodeSnippet("insert")<CR>
+	inoremap    <buffer>  <silent>  <LocalLeader>nr    <Esc>:call <SID>CodeSnippet("insert")<CR>
+	nnoremap    <buffer>  <silent>  <LocalLeader>nw         :call <SID>CodeSnippet("create")<CR>
+	inoremap    <buffer>  <silent>  <LocalLeader>nw    <Esc>:call <SID>CodeSnippet("create")<CR>
+	vnoremap    <buffer>  <silent>  <LocalLeader>nw    <Esc>:call <SID>CodeSnippet("vcreate")<CR>
+	nnoremap    <buffer>  <silent>  <LocalLeader>ne         :call <SID>CodeSnippet("edit")<CR>
+	inoremap    <buffer>  <silent>  <LocalLeader>ne    <Esc>:call <SID>CodeSnippet("edit")<CR>
+	nnoremap    <buffer>  <silent>  <LocalLeader>nv         :call <SID>CodeSnippet("view")<CR>
+	inoremap    <buffer>  <silent>  <LocalLeader>nv    <Esc>:call <SID>CodeSnippet("view")<CR>
+
 	"-------------------------------------------------------------------------------
 	"   run
 	"-------------------------------------------------------------------------------
@@ -1022,14 +1286,15 @@ function! s:CreateAdditionalMaps ()
 	inoremap    <buffer>            <LocalLeader>ra   <Esc>:BashScriptArguments<Space>
    noremap    <buffer>            <LocalLeader>rba       :BashArguments<Space>
  	inoremap    <buffer>            <LocalLeader>rba  <Esc>:BashArguments<Space>
-	"
+
 	if s:UNIX
-		 noremap    <buffer>  <silent>  <LocalLeader>re        :call BASH_MakeScriptExecutable()<CR>
-		inoremap    <buffer>  <silent>  <LocalLeader>re   <C-C>:call BASH_MakeScriptExecutable()<CR>
+		nnoremap    <buffer>  <silent>  <LocalLeader>re        :call <SID>MakeExecutable()<CR>
+		inoremap    <buffer>  <silent>  <LocalLeader>re   <C-C>:call <SID>MakeExecutable()<CR>
+		vnoremap    <buffer>  <silent>  <LocalLeader>re   <C-C>:call <SID>MakeExecutable()<CR>
 	endif
-	nnoremap    <buffer>  <silent>  <LocalLeader>rh        :call BASH_Hardcopy("n")<CR>
-	vnoremap    <buffer>  <silent>  <LocalLeader>rh   <C-C>:call BASH_Hardcopy("v")<CR>
-  "
+	nnoremap    <buffer>  <silent>  <LocalLeader>rh        :call <SID>Hardcopy("n")<CR>
+	vnoremap    <buffer>  <silent>  <LocalLeader>rh   <C-C>:call <SID>Hardcopy("v")<CR>
+
    noremap  <buffer>  <silent>  <C-F9>        :call BASH_Run("n")<CR>
   inoremap  <buffer>  <silent>  <C-F9>   <C-C>:call BASH_Run("n")<CR>
   vnoremap  <buffer>  <silent>  <C-F9>   <C-C>:call BASH_Run("v")<CR>
@@ -1067,8 +1332,8 @@ function! s:CreateAdditionalMaps ()
   inoremap  <buffer>  <silent>  <LocalLeader>hh    <Esc>:call BASH_help('help')<CR>
    noremap  <buffer>  <silent>  <LocalLeader>hm         :call BASH_help('man')<CR>
   inoremap  <buffer>  <silent>  <LocalLeader>hm    <Esc>:call BASH_help('man')<CR>
-	 noremap  <buffer>  <silent>  <LocalLeader>hbs        :call BASH_HelpBashSupport()<CR>
-	inoremap  <buffer>  <silent>  <LocalLeader>hbs   <C-C>:call BASH_HelpBashSupport()<CR>
+	 noremap  <buffer>  <silent>  <LocalLeader>hbs        :call <SID>HelpPlugin()<CR>
+	inoremap  <buffer>  <silent>  <LocalLeader>hbs   <C-C>:call <SID>HelpPlugin()<CR>
 
 	"-------------------------------------------------------------------------------
 	" settings - reset local leader
@@ -1084,28 +1349,19 @@ function! s:CreateAdditionalMaps ()
 	"-------------------------------------------------------------------------------
 	" templates
 	"-------------------------------------------------------------------------------
-	nnoremap  <buffer>  <silent>  <C-j>       i<C-R>=BASH_JumpForward()<CR>
-	inoremap  <buffer>  <silent>  <C-j>  <C-g>u<C-R>=BASH_JumpForward()<CR>
+	if s:BASH_Ctrl_j == 'yes'
+		nnoremap  <buffer>  <silent>  <C-j>       i<C-R>=<SID>JumpForward()<CR>
+		inoremap  <buffer>  <silent>  <C-j>  <C-g>u<C-R>=<SID>JumpForward()<CR>
+	endif
 
-	call mmtemplates#core#CreateMaps ( 'g:BASH_Templates', g:BASH_MapLeader, 'do_special_maps', 'do_del_opt_map' )
+	if s:BASH_Ctrl_d == 'yes'
+		call mmtemplates#core#CreateMaps ( 'g:BASH_Templates', g:BASH_MapLeader, 'do_special_maps', 'do_del_opt_map' )
+	else
+		call mmtemplates#core#CreateMaps ( 'g:BASH_Templates', g:BASH_MapLeader, 'do_special_maps' )
+	endif
 
 endfunction    " ----------  end of function s:CreateAdditionalMaps  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_HelpBashSupport     {{{1
-"   DESCRIPTION:  help bash-support
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_HelpBashSupport ()
-	try
-		:help bashsupport
-	catch
-		exe ':helptags '.s:BASH_PluginDir.'/doc'
-		:help bashsupport
-	endtry
-endfunction    " ----------  end of function BASH_HelpBashSupport ----------
-"
+
 "===  FUNCTION  ================================================================
 "          NAME:  BASH_help     {{{1
 "   DESCRIPTION:  lookup word under the cursor or ask
@@ -1114,17 +1370,19 @@ endfunction    " ----------  end of function BASH_HelpBashSupport ----------
 "===============================================================================
 let s:BASH_DocBufferName       = "BASH_HELP"
 let s:BASH_DocHelpBufferNumber = -1
-"
+
+let s:BuiltinList = []
+
 function! BASH_help( type )
 
 	let cuc		= getline(".")[col(".") - 1]		" character under the cursor
 	let	item	= expand("<cword>")							" word under the cursor
 	if empty(item) || match( item, cuc ) == -1
 		if a:type == 'man'
-			let	item=BASH_Input('[tab compl. on] name of command line utility : ', '', 'shellcmd' )
+			let item = s:UserInput('[tab compl. on] name of command line utility : ', '', 'shellcmd' )
 		endif
 		if a:type == 'help'
-			let	item=BASH_Input('[tab compl. on] name of bash builtin : ', '', 'customlist,BASH_BuiltinComplete' )
+			let item = s:UserInput('[tab compl. on] name of bash builtin : ', '', 'customlist', s:BuiltinList )
 		endif
 	endif
 
@@ -1326,9 +1584,9 @@ function! BASH_SyntaxCheckOptionsLocal ()
 	let	prompt	= 'syntax check options for "'.filename.'" : '
 
 	if exists("b:BASH_SyntaxCheckOptionsLocal")
-		let	b:BASH_SyntaxCheckOptionsLocal= BASH_Input( prompt, b:BASH_SyntaxCheckOptionsLocal, '' )
+		let b:BASH_SyntaxCheckOptionsLocal = s:UserInput( prompt, b:BASH_SyntaxCheckOptionsLocal, '' )
 	else
-		let	b:BASH_SyntaxCheckOptionsLocal= BASH_Input( prompt , "", '' )
+		let b:BASH_SyntaxCheckOptionsLocal = s:UserInput( prompt , "", '' )
 	endif
 
 	if BASH_SyntaxCheckOptions( b:BASH_SyntaxCheckOptionsLocal ) != 0
@@ -1423,53 +1681,6 @@ function! BASH_Settings ( verbose )
 endfunction    " ----------  end of function BASH_Settings ----------
 
 "===  FUNCTION  ================================================================
-"          NAME:  BASH_CreateGuiMenus     {{{1
-"   DESCRIPTION:
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_CreateGuiMenus ()
-	if s:BASH_MenuVisible == 'no'
-		aunmenu <silent> &Tools.Load\ Bash\ Support
-		amenu   <silent> 40.1000 &Tools.-SEP100- :
-		amenu   <silent> 40.1020 &Tools.Unload\ Bash\ Support :call BASH_RemoveGuiMenus()<CR>
-		"
-		call BASH_RereadTemplates()
-		call s:InitMenus ()
-		"
-		let s:BASH_MenuVisible = 'yes'
-	endif
-endfunction    " ----------  end of function BASH_CreateGuiMenus  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_ToolMenu     {{{1
-"   DESCRIPTION:
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_ToolMenu ()
-	amenu   <silent> 40.1000 &Tools.-SEP100- :
-	amenu   <silent> 40.1020 &Tools.Load\ Bash\ Support :call BASH_CreateGuiMenus()<CR>
-endfunction    " ----------  end of function BASH_ToolMenu  ----------
-
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_RemoveGuiMenus     {{{1
-"   DESCRIPTION:
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_RemoveGuiMenus ()
-	if s:BASH_MenuVisible == 'yes'
-		exe "aunmenu <silent> ".s:BASH_RootMenu
-		"
-		aunmenu <silent> &Tools.Unload\ Bash\ Support
-		call BASH_ToolMenu()
-		"
-		let s:BASH_MenuVisible = 'no'
-	endif
-endfunction    " ----------  end of function BASH_RemoveGuiMenus  ----------
-"
-"===  FUNCTION  ================================================================
 "          NAME:  BASH_Toggle_Gvim_Xterm     {{{1
 "   DESCRIPTION:  toggle output destination (Linux/Unix)
 "    PARAMETERS:  -
@@ -1543,45 +1754,16 @@ function! BASH_XtermSize ()
 	let geom	= matchstr( s:BASH_XtermDefaults, regex )
 	let geom	= matchstr( geom, '\d\+x\d\+' )
 	let geom	= substitute( geom, 'x', ' ', "" )
-	let	answer= BASH_Input("   xterm size (COLUMNS LINES) : ", geom, '' )
+	let answer = s:UserInput("   xterm size (COLUMNS LINES) : ", geom, '' )
 	while match(answer, '^\s*\d\+\s\+\d\+\s*$' ) < 0
-		let	answer= BASH_Input(" + xterm size (COLUMNS LINES) : ", geom, '' )
+		let answer = s:UserInput(" + xterm size (COLUMNS LINES) : ", geom, '' )
 	endwhile
 	let answer  = substitute( answer, '^\s\+', "", "" )		 				" remove leading whitespaces
 	let answer  = substitute( answer, '\s\+$', "", "" )						" remove trailing whitespaces
 	let answer  = substitute( answer, '\s\+', "x", "" )						" replace inner whitespaces
 	let s:BASH_XtermDefaults	= substitute( s:BASH_XtermDefaults, regex, "-geometry ".answer , "" )
 endfunction		" ---------- end of function  BASH_XtermSize  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_SaveOption     {{{1
-"   DESCRIPTION:  save option
-"    PARAMETERS:  option name
-"                 characters to be escaped (optional)
-"       RETURNS:
-"===============================================================================
-function! BASH_SaveOption ( option, ... )
-	exe 'let escaped =&'.a:option
-	if a:0 == 0
-		let escaped	= escape( escaped, ' |"\' )
-	else
-		let escaped	= escape( escaped, ' |"\'.a:1 )
-	endif
-	let s:BASH_saved_option[a:option]	= escaped
-endfunction    " ----------  end of function BASH_SaveOption  ----------
-"
-let s:BASH_saved_option					= {}
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_RestoreOption     {{{1
-"   DESCRIPTION:  restore option
-"    PARAMETERS:  option name
-"       RETURNS:
-"===============================================================================
-function! BASH_RestoreOption ( option )
-	exe ':setlocal '.a:option.'='.s:BASH_saved_option[a:option]
-endfunction    " ----------  end of function BASH_RestoreOption  ----------
-"
+
 "===  FUNCTION  ================================================================
 "          NAME:  BASH_ScriptCmdLineArguments     {{{1
 "   DESCRIPTION:  stringify script command line arguments
@@ -1651,19 +1833,25 @@ function! BASH_Run ( mode ) range
 		"
 		" ----- normal mode ----------
 		"
-		call BASH_SaveOption( 'makeprg' )
-		exe	":setlocal makeprg=".s:BASH_Executable
-		exe	':setlocal errorformat='.s:BASH_Errorformat
-		"
+		" save current settings
+		let makeprg_saved = &l:makeprg
+		let errorf_saved  = &l:errorformat
+
+		let &l:makeprg     = s:BASH_Executable
+		let &l:errorformat = s:BASH_Errorformat
+
 		if a:mode=="n"
 			exe ":make ".l:bashCmdLineArgs.l:fullnameesc.l:arguments
 		endif
 		if &term == 'xterm'
 			redraw!
 		endif
-		"
-		call BASH_RestoreOption( 'makeprg' )
-		exe	":botright cwindow"
+
+		" restore current settings
+		let &l:makeprg     = makeprg_saved
+		let &l:errorformat = errorf_saved
+
+		botright cwindow
 
 		if l:currentbuffer != bufname("%") && a:mode=="n"
 			let	pattern	= '^||.*\n\?'
@@ -1678,8 +1866,6 @@ function! BASH_Run ( mode ) range
 			setlocal nomodified
 			silent exe	':cc'
 		endif
-		"
-		exe	':setlocal errorformat='
 	endif
 	"
 	"------------------------------------------------------------------------------
@@ -1762,7 +1948,9 @@ function! BASH_Run ( mode ) range
 		endif
 		"
 	endif
-	"
+	" }}}2
+	"------------------------------------------------------------------------------
+
 	if !has("gui_running") &&  v:progname != 'vim'
 		redraw!
 	endif
@@ -1775,11 +1963,15 @@ endfunction    " ----------  end of function BASH_Run  ----------
 "       RETURNS:
 "===============================================================================
 function! BASH_SyntaxCheck ()
-	exe	":cclose"
+
+	silent exe 'update'   | " write source file if necessary
+	cclose
+
+	" save current settings
+	let	makeprg_saved	= &l:makeprg
+	let errorf_saved  = &l:errorformat
+
 	let	l:currentbuffer=bufname("%")
-	exe	":update"
-	call BASH_SaveOption( 'makeprg' )
-	exe	":setlocal makeprg=".s:BASH_Executable
 	let l:fullname				= expand("%:p")
 	"
 	" check global syntax check options / reset in case of an error
@@ -1795,15 +1987,19 @@ function! BASH_SyntaxCheck ()
 	" match the Bash error messages (quickfix commands)
 	" errorformat will be reset by function BASH_Handle()
 	" ignore any lines that didn't match one of the patterns
-	"
-	exe	':setlocal errorformat='.s:BASH_Errorformat
+
+	let &l:makeprg     = s:BASH_Executable
+	let &l:errorformat = s:BASH_Errorformat
+
 	silent exe ":make! -n ".options.' -- "'.l:fullname.'"'
-	exe	":botright cwindow"
-	exe	':setlocal errorformat='
-	call BASH_RestoreOption('makeprg')
-	"
+
+	" restore current settings
+	let &l:makeprg     = makeprg_saved
+	let &l:errorformat = errorf_saved
+
+	botright cwindow
+
 	" message in case of success
-	"
 	redraw!
 	if l:currentbuffer ==  bufname("%")
 		echohl Search | echo l:currentbuffer." : Syntax is OK" | echohl None
@@ -1856,70 +2052,70 @@ function! BASH_Debugger ()
 		silent exe '!'.s:BASH_bashdb.' -- '.Sou.l:arguments
 	endif
 endfunction		" ---------- end of function  BASH_Debugger  ----------
-"
-"===  FUNCTION  ================================================================
-"          NAME:  BASH_MakeScriptExecutable     {{{1
-"   DESCRIPTION:  make script executable
-"    PARAMETERS:  -
-"       RETURNS:
-"===============================================================================
-function! BASH_MakeScriptExecutable ()
-	let filename	= expand("%:p")
-	if executable(filename) == 0
-		"
-		" not executable -> executable
-		"
-		if BASH_Input( '"'.filename.'" NOT executable. Make it executable [y/n] : ', 'y' ) == 'y'
-			silent exe "!chmod u+x ".shellescape(filename)
-			if v:shell_error
-				" confirmation for the user
-				echohl WarningMsg
-				echo 'Could not make "'.filename.'" executable!'
-			else
-				" reload the file, otherwise the message will not be visible
-				if &autoread && ! &l:modified
-					silent exe "edit"
-				endif
-				" confirmation for the user
-				echohl Search
-				echo 'Made "'.filename.'" executable.'
-			endif
-			echohl None
-		endif
-	else
-		"
-		" executable -> not executable
-		"
-		if BASH_Input( '"'.filename.'" is executable. Make it NOT executable [y/n] : ', 'y' ) == 'y'
-			silent exe "!chmod u-x ".shellescape(filename)
-			if v:shell_error
-				" confirmation for the user
-				echohl WarningMsg
-				echo 'Could not make "'.filename.'" not executable!'
-			else
-				" reload the file, otherwise the message will not be visible
-				if &autoread && ! &l:modified
-					silent exe "edit"
-				endif
-				" confirmation for the user
-				echohl Search
-				echo 'Made "'.filename.'" not executable.'
-			endif
-			echohl None
-		endif
+
+"-------------------------------------------------------------------------------
+" s:ToolMenu : Add or remove tool menu entries.   {{{1
+"-------------------------------------------------------------------------------
+function! s:ToolMenu( action )
+
+	if ! has ( 'menu' )
+		return
 	endif
-endfunction   " ---------- end of function  BASH_MakeScriptExecutable  ----------
+
+	if a:action == 'setup'
+		anoremenu <silent> 40.1000 &Tools.-SEP100- :
+		anoremenu <silent> 40.1020 &Tools.Load\ Bash\ Support   :call <SID>AddMenus()<CR>
+	elseif a:action == 'load'
+		aunmenu   <silent> &Tools.Load\ Bash\ Support
+		anoremenu <silent> 40.1020 &Tools.Unload\ Bash\ Support :call <SID>RemoveMenus()<CR>
+	elseif a:action == 'unload'
+		aunmenu   <silent> &Tools.Unload\ Bash\ Support
+		anoremenu <silent> 40.1020 &Tools.Load\ Bash\ Support   :call <SID>AddMenus()<CR>
+		exe 'aunmenu <silent> '.s:BASH_RootMenu
+	endif
+
+endfunction    " ----------  end of function s:ToolMenu  ----------
+
+"-------------------------------------------------------------------------------
+" s:AddMenus : Add menus.   {{{1
+"-------------------------------------------------------------------------------
+function! s:AddMenus()
+	if s:MenuVisible == 0
+		" the menu is becoming visible
+		let s:MenuVisible = 2
+		" make sure the templates are loaded
+		call s:RereadTemplates ()
+		" initialize if not existing
+		call s:ToolMenu ( 'load' )
+		call s:InitMenus ()
+		" the menu is now visible
+		let s:MenuVisible = 1
+	endif
+endfunction    " ----------  end of function s:AddMenus  ----------
+
+"-------------------------------------------------------------------------------
+" s:RemoveMenus : Remove menus.   {{{1
+"-------------------------------------------------------------------------------
+function! s:RemoveMenus()
+	if s:MenuVisible == 1
+		" destroy if visible
+		call s:ToolMenu ( 'unload' )
+		" the menu is now invisible
+		let s:MenuVisible = 0
+	endif
+endfunction    " ----------  end of function s:RemoveMenus  ----------
 
 "----------------------------------------------------------------------
-"  *** SETUP PLUGIN *** {{{1
+" === Setup: Templates and menus ===   {{{1
 "----------------------------------------------------------------------
 
-call BASH_ToolMenu()
+" tool menu entry
+call s:ToolMenu ( 'setup' )
 
 if s:BASH_LoadMenus == 'yes' && s:BASH_CreateMenusDelayed == 'no'
-	call BASH_CreateGuiMenus()
+	call s:AddMenus ()
 endif
-"
+
 if has( 'autocmd' )
 	"
 	"-------------------------------------------------------------------------------
@@ -1937,8 +2133,8 @@ if has( 'autocmd' )
   autocmd FileType *
         \ if &filetype == 'sh' |
         \   if ! exists( 'g:BASH_Templates' ) |
-        \     if s:BASH_LoadMenus == 'yes' | call BASH_CreateGuiMenus ()  |
-        \     else                         | call BASH_RereadTemplates () |
+        \     if s:BASH_LoadMenus == 'yes' | call s:AddMenus ()  |
+        \     else                         | call s:RereadTemplates () |
         \     endif |
         \   endif |
         \   call s:CreateAdditionalMaps () |
@@ -1949,16 +2145,17 @@ if has( 'autocmd' )
 	" insert file header
 	"-------------------------------------------------------------------------------
 	if s:BASH_InsertFileHeader == 'yes'
-		autocmd BufNewFile  *.sh  call mmtemplates#core#InsertTemplate(g:BASH_Templates, 'Comments.file header')
+		autocmd BufNewFile  *.sh  call s:InsertFileHeader()
 		if exists( 'g:BASH_AlsoBash' )
 			for item in g:BASH_AlsoBash
-				exe "autocmd BufNewFile ".item." call mmtemplates#core#InsertTemplate(g:BASH_Templates, 'Comments.file header')"
+				exe "autocmd BufNewFile ".item." call s:InsertFileHeader()"
 			endfor
 		endif
 	endif
 
 endif
 " }}}1
-"
+"-------------------------------------------------------------------------------
+
 " =====================================================================================
 " vim: tabstop=2 shiftwidth=2 foldmethod=marker
