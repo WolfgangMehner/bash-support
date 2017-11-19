@@ -41,7 +41,7 @@
 --  Auxiliary Functions   {{{1
 ------------------------------------------------------------------------
 
-function escape_shell ( text )
+local function escape_shell ( text )
 	return string.gsub ( text, '[%(%);&=\' ]', function ( m ) return '\\' .. m end )
 end  ----------  end of function escape_shell  ----------
 
@@ -100,12 +100,17 @@ filelists_repo.awk = {
 
 filelists.bash = {
 	'autoload/mmtemplates/',
+	'autoload/mmtoolbox/tools.vim',
+	'autoload/mmtoolbox/bash/bashdb.vim',
 	'doc/bashsupport.txt',
 	'doc/templatesupport.txt',
+	'doc/toolbox.txt',
+	'doc/bashdbintegration.txt',
 	'ftdetect/template.vim',
-	'ftplugin/sh.vim',
+	'ftplugin/bashhelp.vim',
 	'ftplugin/template.vim',
 	'plugin/bash-support.vim',
+	'syntax/bashhelp.vim',
 	'syntax/template.vim',
 	'bash-support/codesnippets/',
 	'bash-support/doc/ChangeLog',
@@ -139,8 +144,6 @@ filelists.c = {
 	'doc/toolboxdoxygen.txt',
 	'doc/toolboxmake.txt',
 	'ftdetect/template.vim',
-	'ftplugin/c.vim',
-	'ftplugin/make.vim',
 	'ftplugin/template.vim',
 	'plugin/c.vim',
 	'syntax/template.vim',
@@ -190,8 +193,6 @@ filelists.latex = {
 	'doc/toolbox.txt',
 	'doc/toolboxmake.txt',
 	'ftdetect/template.vim',
-	'ftplugin/tex.vim',
-	'ftplugin/make.vim',
 	'ftplugin/template.vim',
 	'plugin/latex-support.vim',
 	'syntax/template.vim',
@@ -223,7 +224,6 @@ filelists.lua = {
 	'doc/toolbox.txt',
 	'doc/toolboxmake.txt',
 	'ftdetect/template.vim',
-	'ftplugin/lua.vim',
 	'ftplugin/template.vim',
 	'plugin/lua-support.vim',
 	'syntax/template.vim',
@@ -280,10 +280,6 @@ filelists.perl = {
 	'doc/toolbox.txt',
 	'doc/toolboxmake.txt',
 	'ftdetect/template.vim',
-	'ftplugin/make.vim',
-	'ftplugin/perl.vim',
-	'ftplugin/pod.vim',
-	'ftplugin/qf.vim',
 	'ftplugin/template.vim',
 	'plugin/perl-support.vim',
 	'syntax/template.vim',
@@ -450,7 +446,7 @@ elseif args[2] == 'cp-repo' then
 	if #args >= 3 then
 
 		local dest_dir = args[3]
-		filelist_compl = {}
+		local filelist_compl = {}
 
 		for key, val in pairs ( filelist ) do
 			table.insert ( filelist_compl, val )
