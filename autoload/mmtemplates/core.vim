@@ -1664,7 +1664,15 @@ function! s:IncludeFile ( templatefile, ... )
 	if read_abs
 		let templatefile = s:ConcatNormalizedFilename ( templatefile )
 	else
-		let templatefile = s:ConcatNormalizedFilename ( s:t_runtime.state_stack[-1].current_path, templatefile )
+		" check whether the first item in runtimepath, e.g. $HOME/.vim/templates has the template file
+		let templatepath_tmp =  s:ConcatNormalizedFilename( split(&runtimepath, ',')[0], "templates")
+		let templatepath_tmp =  s:ConcatNormalizedFilename( templatepath_tmp, templatefile)
+		if filereadable(templatepath_tmp)
+			let templatefile = templatepath_tmp
+		else
+			let templatefile = s:ConcatNormalizedFilename ( s:t_runtime.state_stack[-1].current_path, templatefile )
+		endif
+		unlet templatepath_tmp
 	endif
 	"
 	" file does not exists or was already visited?
