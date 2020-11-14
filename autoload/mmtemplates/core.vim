@@ -183,7 +183,7 @@ function! s:GetGlobalSetting ( varname, ... )
 		let { 's:'.a:varname } = { 'g:'.a:varname }
 	endif
 	"
-	let s:Templates_AllSettings[ a:varname ] = { 's:'.a:varname }
+	let s:Templates_AllSettings[a:varname] = { 's:'.a:varname }
 endfunction    " ----------  end of function s:GetGlobalSetting  ----------
 "
 " }}}2
@@ -309,11 +309,11 @@ let s:StandardProperties = {
 "
 let s:TypeNames = [ ' ', ' ', ' ', ' ', ' ', ' ' ]
 "
-let s:TypeNames[ type(0)   ] = 'i'  " integer
-let s:TypeNames[ type("")  ] = 's'  " string
-let s:TypeNames[ type([])  ] = 'l'  " list
-let s:TypeNames[ type({})  ] = 'd'  " dict
-"let s:TypeNames[ type(0.0) ] = 'n'  " number
+let s:TypeNames[type(0)] = 'i'  " integer
+let s:TypeNames[type("")] = 's'  " string
+let s:TypeNames[type([])] = 'l'  " list
+let s:TypeNames[type({})] = 'd'  " dict
+"let s:TypeNames[type(0.0)] = 'n'  " number
 " TODO: why does float not work in some cases?
 "       not important right now.
 "
@@ -958,7 +958,7 @@ function! s:AddList ( type, name, settings, lines )
 		end
 	endif
 	"
-	let s:library.resources[ 'list!'.a:name ] = list
+	let s:library.resources['list!'.a:name] = list
 	"
 endfunction    " ----------  end of function s:AddList  ----------
 "
@@ -991,7 +991,7 @@ function! s:AddTemplate ( type, name, settings, lines )
 	"
 	if has_key ( s:library.templates, name.'!!type' )
 		let my_type    = a:type
-		let other_type = s:library.templates[ name.'!!type' ].type
+		let other_type = s:library.templates[name.'!!type'].type
 		"
 		if my_type != other_type
 			if my_type == 't'
@@ -1006,12 +1006,12 @@ function! s:AddTemplate ( type, name, settings, lines )
 		" --------------------------------------------------
 		"  new template
 		" --------------------------------------------------
-		let s:library.templates[ name.'!!type' ] = {
+		let s:library.templates[name.'!!type'] = {
 					\ 'type'        : a:type,
 					\ 'placement'   : 'below',
 					\ 'indentation' : 1,
 					\ }
-		let s:library.templates[ name.'!!menu' ] = {
+		let s:library.templates[name.'!!menu'] = {
 					\ 'filetypes' : s:t_runtime.use_filetypes,
 					\ 'visual'    : match ( a:lines, '<SPLIT>\|<SHIFT>' ) >= 0,
 					\ 'map'       : '',
@@ -1026,7 +1026,7 @@ function! s:AddTemplate ( type, name, settings, lines )
 		"
 		" TODO: review this
 		if a:type == 'help'
-			let s:library.templates[ name.'!!type' ].placement = 'help'
+			let s:library.templates[name.'!!type'].placement = 'help'
 		endif
 		"
 		call add ( s:library.menu_order, name )
@@ -1037,8 +1037,8 @@ function! s:AddTemplate ( type, name, settings, lines )
 	"  settings
 	" --------------------------------------------------
 	"
-	let templ_type = s:library.templates[ name.'!!type' ]
-	let templ_menu = s:library.templates[ name.'!!menu' ]
+	let templ_type = s:library.templates[name.'!!type']
+	let templ_menu = s:library.templates[name.'!!menu']
 	"
 	for s in a:settings
 		"
@@ -1117,10 +1117,10 @@ function! s:AddTemplate ( type, name, settings, lines )
 		if s:t_runtime.overwrite_warning && has_key ( s:library.templates, name.'!default' )
 			call s:ErrorMsg ( 'Warning: Overwriting a help template: "'.name.'"' )
 		endif
-		let s:library.templates[ name.'!default' ] = a:lines
+		let s:library.templates[name.'!default'] = a:lines
 		return
 	elseif empty ( s:t_runtime.use_styles )
-		let styles = [ 'default' ]
+		let styles = ['default']
 	else
 		let styles = s:t_runtime.use_styles
 	endif
@@ -1133,7 +1133,7 @@ function! s:AddTemplate ( type, name, settings, lines )
 			call s:ErrorMsg ( 'Warning: Overwriting style in template "'.name.'": "'.s.'"' )
 		endif
 		"
-		let s:library.templates[ name.'!'.s ] = a:lines
+		let s:library.templates[name.'!'.s] = a:lines
 		"
 	endfor
 	"
@@ -1172,8 +1172,8 @@ function! s:AddSeparator ( type, name, settings )
 		endif
 	else
 		"
-		let s:library.templates[ name.'!!type' ] = { 'type'  : 'sep', }
-		let s:library.templates[ name.'!!menu' ] = { 'entry' : 11, }
+		let s:library.templates[name.'!!type'] = { 'type'  : 'sep', }
+		let s:library.templates[name.'!!menu'] = { 'entry' : 11, }
 		"
 		call add ( s:library.menu_order, name )
 		"
@@ -1468,7 +1468,7 @@ function! s:SetFormat ( name, replacement )
 		endtry
 	endif
 
-	let s:library.macros[ a:name ] = a:replacement
+	let s:library.macros[a:name] = a:replacement
 
 endfunction    " ----------  end of function s:SetFormat  ----------
 "
@@ -1487,7 +1487,7 @@ function! s:SetMacro ( name, replacement )
 		return
 	endif
 	"
-	let s:library.macros[ a:name ] = a:replacement
+	let s:library.macros[a:name] = a:replacement
 	"
 endfunction    " ----------  end of function s:SetMacro  ----------
 "
@@ -1537,7 +1537,7 @@ function! s:MenuShortcut ( name, shortcut )
 	"
 	let name = substitute( a:name, '\.$', '', '' )
 	"
-	let s:library.menu_shortcuts[ name ] = a:shortcut
+	let s:library.menu_shortcuts[name] = a:shortcut
 	"
 endfunction    " ----------  end of function s:MenuShortcut  ----------
 "
@@ -1664,7 +1664,15 @@ function! s:IncludeFile ( templatefile, ... )
 	if read_abs
 		let templatefile = s:ConcatNormalizedFilename ( templatefile )
 	else
-		let templatefile = s:ConcatNormalizedFilename ( s:t_runtime.state_stack[-1].current_path, templatefile )
+		" check whether the first item in runtimepath, e.g. $HOME/.vim/templates has the template file
+		let templatepath_tmp =  s:ConcatNormalizedFilename( split(&runtimepath, ',')[0], "templates")
+		let templatepath_tmp =  s:ConcatNormalizedFilename( templatepath_tmp, templatefile)
+		if filereadable(templatepath_tmp)
+			let templatefile = templatepath_tmp
+		else
+			let templatefile = s:ConcatNormalizedFilename ( s:t_runtime.state_stack[-1].current_path, templatefile )
+		endif
+		unlet templatepath_tmp
 	endif
 	"
 	" file does not exists or was already visited?
@@ -2532,7 +2540,7 @@ function! s:CheckStdTempl ( cmds, text, calls )
 			call s:ErrorMsg ( 'The special macro "'.m_name.'" can not be replaced via |?'.m_name.'|.' )
 		elseif ! has_key ( prompted, m_name )
 			let cmds .= "Prompt(".string(m_name).",".string(m_flag[1:]).")\n"
-			let prompted[ m_name ] = 1
+			let prompted[m_name] = 1
 		endif
 		"
 	endwhile
@@ -2642,7 +2650,7 @@ function! s:CheckTemplate ( template, type )
 		let mlist = matchlist ( a:template[ idx : idx_n ], regex.FunctionLine )
 		"
 		" no match or 'Comment' or 'Insert' function?
-		if empty ( mlist ) || mlist[ 2 ] =~ regex.TextBlockFunctions
+		if empty ( mlist ) || mlist[2] =~ regex.TextBlockFunctions
 			break
 		endif
 		"
@@ -2731,7 +2739,7 @@ function! s:GetTemplate ( name, style )
 		else
 			let template = "|C()|\n".cmds."|T()|\n".text
 		end
-		let s:library.templates[ a:name.'!'.style  ] = template
+		let s:library.templates[a:name.'!'.style] = template
 		"
 	end
 	"
@@ -2957,7 +2965,7 @@ function! s:PrepareStdTempl ( cmds, text, name )
 			"
 			if ! has_key ( m_local, m_name )
 				let revert = 'call remove ( m_local, "'.m_name.'" ) | '.revert
-				let m_local[ m_name ] = m_text
+				let m_local[m_name] = m_text
 			endif
 			"
 		elseif f_name == 'PickFile'
@@ -3097,8 +3105,8 @@ function! s:PrepareStdTempl ( cmds, text, name )
 				let m_text = s:ApplyFlag ( m_text, m_flag, '', 0 )
 				"
 				" save the result
-				let m_global[ m_name ] = m_text
-				let prompted[ m_name ] = 1
+				let m_global[m_name] = m_text
+				let prompted[m_name] = 1
 			endif
 		else
 			break
@@ -3311,7 +3319,7 @@ function! s:PrepareTemplate ( name, ... )
 			else
 				let revert = 'call remove ( m_local, "'.m_name.'" ) | '.revert
 			endif
-			let m_local[ m_name ] = a:[i+1]
+			let m_local[m_name] = a:[i+1]
 			let i += 2
 		elseif a:[i] =~ '<CURSOR>\|{CURSOR}'
 			let remove_cursor = 0
@@ -3399,25 +3407,25 @@ endfunction    " ----------  end of function s:PrepareTemplate  ----------
 
 function! s:RenewStdMacros ( to_list, from_list )
 
-	let a:to_list[ 'BASENAME' ] = expand( '%:t:r' )
-	let a:to_list[ 'FILENAME' ] = expand( '%:t'   )
-	let a:to_list[ 'PATH'     ] = expand( '%:p:h' )
-	let a:to_list[ 'SUFFIX'   ] = expand( '%:e'   )
+	let a:to_list['BASENAME'] = expand( '%:t:r' )
+	let a:to_list['FILENAME'] = expand( '%:t'   )
+	let a:to_list['PATH'] = expand( '%:p:h' )
+	let a:to_list['SUFFIX'] = expand( '%:e'   )
 
 	if a:from_list[ 'TIME_LOCALE' ] != ''
 		let save_time_lang = v:lc_time
 		silent exe 'language time '.a:from_list[ 'TIME_LOCALE' ]
 	endif
 
-	let a:to_list[ 'DATE' ]          = strftime( a:from_list[ 'DATE' ] )
-	let a:to_list[ 'DATE_PRETTY' ]   = strftime( a:from_list[ 'DATE_PRETTY' ] )
-	let a:to_list[ 'DATE_PRETTY1' ]  = strftime( a:from_list[ 'DATE_PRETTY1' ] )
-	let a:to_list[ 'DATE_PRETTY2' ]  = strftime( a:from_list[ 'DATE_PRETTY2' ] )
-	let a:to_list[ 'DATE_PRETTY3' ]  = strftime( a:from_list[ 'DATE_PRETTY3' ] )
-	let a:to_list[ 'TIME' ]          = strftime( a:from_list[ 'TIME' ] )
-	let a:to_list[ 'TIME_PRETTY' ]   = strftime( a:from_list[ 'TIME_PRETTY' ] )
-	let a:to_list[ 'YEAR' ]          = strftime( a:from_list[ 'YEAR' ] )
-	let a:to_list[ 'YEAR_PRETTY' ]   = strftime( a:from_list[ 'YEAR_PRETTY' ] )
+	let a:to_list['DATE']          = strftime( a:from_list[ 'DATE' ] )
+	let a:to_list['DATE_PRETTY']   = strftime( a:from_list[ 'DATE_PRETTY' ] )
+	let a:to_list['DATE_PRETTY1']  = strftime( a:from_list[ 'DATE_PRETTY1' ] )
+	let a:to_list['DATE_PRETTY2']  = strftime( a:from_list[ 'DATE_PRETTY2' ] )
+	let a:to_list['DATE_PRETTY3']  = strftime( a:from_list[ 'DATE_PRETTY3' ] )
+	let a:to_list['TIME']          = strftime( a:from_list[ 'TIME' ] )
+	let a:to_list['TIME_PRETTY']   = strftime( a:from_list[ 'TIME_PRETTY' ] )
+	let a:to_list['YEAR']          = strftime( a:from_list[ 'YEAR' ] )
+	let a:to_list['YEAR_PRETTY']   = strftime( a:from_list[ 'YEAR_PRETTY' ] )
 
 	if a:from_list[ 'TIME_LOCALE' ] != ''
 		silent exe 'language time '.save_time_lang
@@ -3778,7 +3786,7 @@ function! mmtemplates#core#InsertTemplate ( library, t_name, ... ) range
 			let i += 3
 		elseif a:[i] =~ regex.MacroMatch && i+1 <= a:0
 			let name = matchlist ( a:[i], regex.MacroNameC )[1]
-			let s:t_runtime.macros[ name ] = a:[i+1]
+			let s:t_runtime.macros[name] = a:[i+1]
 			let i += 2
 		elseif a:[i] == 'pick' && i+1 <= a:0
 			call add ( options, 'pick' )
@@ -4015,7 +4023,7 @@ function! mmtemplates#core#CreateMaps ( library, localleader, ... )
 	if has_key ( g:CheckedFiletypes, &filetype )
 		let echo_warning = 0
 	else
-		let g:CheckedFiletypes[ &filetype ] = 1
+		let g:CheckedFiletypes[&filetype] = 1
 		let echo_warning = s:Templates_MapInUseWarn == 'yes'
 	endif
 	"
@@ -4200,7 +4208,7 @@ function! s:CreateSubmenu ( menu, priority )
 		if ! has_key ( s:library.menu_existing, submenu.clean )
 			" a new menu!
 			" (the key is the menu name, it has to be correctly escaped)
-			let s:library.menu_existing[ submenu.clean ] = 0
+			let s:library.menu_existing[submenu.clean] = 0
 			"
 			" shortcut and menu entry
 			let tname = substitute( submenu.clean, '\\\(.\)', '\1', 'g' )
@@ -4355,7 +4363,7 @@ function! s:CreateTemplateMenus (  )
 			endif
 			"
 			let sep_nr = s:library.menu_existing[ m_key ] + 1
-			let s:library.menu_existing[ m_key ] = sep_nr
+			let s:library.menu_existing[m_key] = sep_nr
 			"
 			exe 'anoremenu '.s:t_runtime.root_menu.escape( t_menu, ' ' ).'-TSep'.sep_nr.'- :'
 			"
@@ -4609,7 +4617,7 @@ function! mmtemplates#core#CreateMenus ( library, root_menu, ... )
 		if t_lib.api_version < 1000000
 			let t_lib.menu_existing[ escape ( name, ' ' ) ] = 0
 		else
-			let t_lib.menu_existing[ name ] = 0
+			let t_lib.menu_existing[name] = 0
 		endif
 	endfor
 	"
@@ -4847,7 +4855,7 @@ function! mmtemplates#core#Resource ( library, mode, ... )
 		if type( value ) != type( '' )
 			return [ '', 'Argument "value" must be given as a string.' ]
 		else
-			let t_lib.properties[ key ] = value
+			let t_lib.properties[key] = value
 			return [ '', '' ]
 		endif
 		"
@@ -4896,19 +4904,19 @@ function! mmtemplates#core#Resource ( library, mode, ... )
 		let value = a:3
 		"
 		" check type and set
-		if types[ resource ] == ''
+		if types[resource] == ''
 			return [ '', 'Resource "'.a:1.'" can not be set.' ]
 		elseif s:TypeNames[ type( value ) ] !~ types[ resource ]
 			return [ '', 'Argument "value" has the wrong type.' ]
 		elseif resource == 'list'
-			let t_lib.resources[ 'list!'.key ] = value
+			let t_lib.resources['list!'.key] = value
 		elseif resource == 'macro'
-			let t_lib.macros[ key ] = value
+			let t_lib.macros[key] = value
 		elseif resource == 'path'
-			let t_lib.resources[ 'path!'.key ] = fnamemodify( expand( value ), ":p" )
+			let t_lib.resources['path!'.key] = fnamemodify( expand( value ), ":p" )
 		elseif resource == 'property'
 			if has_key ( t_lib.properties, key )
-				let t_lib.properties[ key ] = value
+				let t_lib.properties[key] = value
 				return [ '', '' ]
 			else
 				return [ '', 'Property "'.key.'" does not exist.' ]
@@ -5179,7 +5187,7 @@ function! mmtemplates#core#FindPersonalizationFile ( library )
 	"  do the job
 	" ==================================================
 	"
-	if t_lib.properties[ 'Templates::UsePersonalizationFile' ] == 'no'
+	if t_lib.properties['Templates::UsePersonalizationFile'] == 'no'
 		return ''
 	endif
 	"
