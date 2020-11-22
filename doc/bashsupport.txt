@@ -1,9 +1,9 @@
-*bashsupport.txt*                Bash Support                      Oct 01 2017
+*bashsupport.txt*                Bash Support                      Nov 22 2020
 
 Bash Support                                      *bash-support* *bashsupport*
 
-                             Plug-in version 5.0alpha
-                        for Vim version 7.0 and above
+                             Plug-in version 5.0beta
+                        for Vim version 7.4 and above
                    Wolfgang Mehner <wolfgang-mehner@web.de>
                       Fritz Mehner <mehner.fritz@web.de>
 
@@ -545,7 +545,7 @@ in '.vimrc' by the global variable g:BASH_OutputMethod, e.g.
 >
   let g:BASH_OutputMethod = "xterm"
 <
-The methods are "vim-io", "vim-qf", "buffer", "xterm", and "terminal". The
+The methods are "cmd-line", "quickfix", "buffer", "xterm", and "terminal". The
 method "xterm" requires xterm(1), and is only available under UNIX. The method
 "terminal" requires the |+terminal| feature.
 
@@ -730,10 +730,10 @@ Legend:  (i) insert mode, (n) normal mode, (v) visual mode
   -- Run ----------------------------------------------------
 
   [n]\rr     update file, run script             (n, i)
-     \ra     set script cmd. line arguments      (n, i)
-     \rba    set Bash cmd. line arguments        (n, i)
-     \rc     update file, check syntax           (n, i)
-     \rco    syntax check options                (n, i)
+     \rsa    set script cmd. line arguments      (n, i)
+     \ria    set Bash cmd. line arguments        (n, i)
+     \rk     update file, check syntax           (n, i)
+     \rso    syntax check options                (n, i)
      \ro     change output destination           (n, i)
      \rd     set "direct run"                    (n, i)
      \rse    set shell executable                (n, i)
@@ -862,8 +862,8 @@ g:BASH_Dictionary_File         $HOME."/.vim/bash-support/wordlists/bash.list"
 g:BASH_RootMenu                '&Bash.'
 g:BASH_GuiSnippetBrowser       'gui'
 
-g:BASH_OutputMethod            'vim-io'  (Linux/U**X)
-                               'xterm'   (Windows)
+g:BASH_OutputMethod            'cmd-line'  (Vim/gVim)
+                               'terminal'  (Neovim)
 g:BASH_DirectRun               'no'
 g:BASH_LineEndCommColDefault   49
 g:BASH_SyntaxCheckOptionsGlob  ''

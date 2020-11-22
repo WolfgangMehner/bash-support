@@ -7,14 +7,14 @@
 "                  Write Bash scripts by inserting comments, statements,
 "                  variables and builtins.
 "
-"   VIM Version:  7.0+
+"   VIM Version:  7.4+
 "        Author:  Wolfgang Mehner <wolfgang-mehner@web.de>
 "                 Fritz Mehner <mehner.fritz@web.de>
 "       Version:  see g:BASH_Version below
 "       Created:  26.02.2001
-"      Revision:  19.11.2017
+"      Revision:  22.11.2020
 "       License:  Copyright (c) 2001-2015, Dr. Fritz Mehner
-"                 Copyright (c) 2016-2017, Wolfgang Mehner
+"                 Copyright (c) 2016-2020, Wolfgang Mehner
 "                 This program is free software; you can redistribute it and/or
 "                 modify it under the terms of the GNU General Public License as
 "                 published by the Free Software Foundation, version 2 of the
@@ -30,10 +30,10 @@
 " === Basic checks ===   {{{1
 "-------------------------------------------------------------------------------
 
-" need at least 7.0
-if v:version < 700
+" need at least 7.4
+if v:version < 740
 	echohl WarningMsg
-	echo 'The plugin bash-support.vim needs Vim version >= 7.'
+	echo 'The plugin bash-support.vim needs Vim version >= 7.4'
 	echohl None
 	finish
 endif
@@ -44,7 +44,7 @@ if exists("g:BASH_Version") || &cp
 	finish
 endif
 
-let g:BASH_Version = "5.0alpha"                  " version number of this script; do not change
+let g:BASH_Version = "5.0beta"                  " version number of this script; do not change
 
 "-------------------------------------------------------------------------------
 " === Auxiliary functions ===   {{{1
@@ -64,10 +64,10 @@ let g:BASH_Version = "5.0alpha"                  " version number of this script
 "-------------------------------------------------------------------------------
 
 function! s:ApplyDefaultSetting ( varname, value )
-	if ! exists ( 'g:'.a:varname )
-		let { 'g:'.a:varname } = a:value
+	if ! exists( 'g:'.a:varname )
+		let {'g:'.a:varname} = a:value
 	endif
-endfunction    " ----------  end of function s:ApplyDefaultSetting  ----------
+endfunction
 
 "-------------------------------------------------------------------------------
 " s:ErrorMsg : Print an error message.   {{{2
@@ -86,7 +86,7 @@ function! s:ErrorMsg ( ... )
 		echomsg line
 	endfor
 	echohl None
-endfunction    " ----------  end of function s:ErrorMsg  ----------
+endfunction
 
 "-------------------------------------------------------------------------------
 " s:GetGlobalSetting : Get a setting from a global variable.   {{{2
@@ -107,10 +107,10 @@ endfunction    " ----------  end of function s:ErrorMsg  ----------
 function! s:GetGlobalSetting ( varname, ... )
 	let lname = a:varname
 	let gname = a:0 >= 1 ? a:1 : lname
-	if exists ( 'g:'.gname )
-		let { 's:'.lname } = { 'g:'.gname }
+	if exists( 'g:'.gname )
+		let {'s:'.lname} = {'g:'.gname}
 	endif
-endfunction    " ----------  end of function s:GetGlobalSetting  ----------
+endfunction
 
 "-------------------------------------------------------------------------------
 " s:ImportantMsg : Print an important message.   {{{2
@@ -128,6 +128,125 @@ function! s:ImportantMsg ( ... )
 	echo join ( a:000, "\n" )
 	echohl None
 endfunction    " ----------  end of function s:ImportantMsg  ----------
+
+"-------------------------------------------------------------------------------
+" s:OpenBuffer : Open a scratch buffer.   {{{2
+"
+" If a buffer called 'name' already exists, jump to that buffer. Otherwise,
+" open a buffer of the given name an set it up as a scratch buffer. It is
+" deleted after the window is closed.
+"
+" Options:
+" - showdir:       the directory will be shown in the buffer list (set buf=nowrite)
+" - reuse_ontab:   reuse a buffer of the same name on this tab page
+" - reuse_other:   reuse a buffer of the same name from another tab page
+" - topic <tname>: set a topic name
+"
+" Settings:
+" - buftype=nofile/nowrite (depending on the option 'showdir')
+" - bufhidden=wipe
+" - swapfile=0
+" - tabstop=8
+"
+" Parameters:
+"   name - name of the buffer (string)
+"   ... - options (string)
+" Returns:
+"   opened -  true, if a new buffer was opened (integer)
+"-------------------------------------------------------------------------------
+
+function! s:OpenBuffer ( name, ... )
+
+	" options
+	let btype = 'nofile'
+	let reuse_ontab = 1
+	let reuse_other = 0
+	let topic = ''
+
+	let idx = 0
+	while idx < a:0
+		let val = a:000[idx]
+		if val == 'showdir'
+			let btype = 'nowrite'                     " like 'nofile', but the directory is shown in the buffer list
+			let idx += 1
+		elseif val == 'reuse_ontab'
+			let reuse_ontab = a:000[idx+1]
+			let idx += 2
+		elseif val == 'reuse_other'
+			let reuse_other = a:000[idx+1]
+			let idx += 2
+		elseif val == 'topic'
+			let topic = a:000[idx+1]
+			let idx += 2
+		else
+			call s:ErrorMsg ( 'Unknown buffer option: '.val )
+		endif
+	endwhile
+
+	let buf_name  = a:name
+	let buf_regex = a:name
+	if topic != ''
+		let buf_name  .= ' ('.topic.')'
+		let buf_regex .= ' ([a-zA-Z0-9 :_-]\+)'
+	endif
+	let buf_regex = '{'.buf_regex.','.buf_regex.' -[0-9]\+-'.'}'
+
+	" a buffer like this already opened on the current tab page?
+	if reuse_ontab && bufwinnr ( buf_regex ) != -1
+		" yes -> go to the window containing the buffer
+		exe bufwinnr( buf_regex ).'wincmd w'
+		call s:RenameBuffer( buf_name, 1 )
+		return 0
+	endif
+
+	" no -> open a new window
+	aboveleft new
+
+	" buffer exists elsewhere?
+	if reuse_other && bufnr ( buf_regex ) != -1
+		" yes -> reuse it
+		silent exe 'edit #'.bufnr( buf_regex )
+		call s:RenameBuffer( buf_name, 1 )
+		return 0
+	endif
+
+	" no -> settings of the new buffer
+	let &l:buftype   = btype
+	let &l:bufhidden = 'wipe'
+	let &l:swapfile  = 0
+	let &l:tabstop   = 8
+	call s:RenameBuffer( buf_name, 1 )
+
+	return 1
+endfunction
+
+"-------------------------------------------------------------------------------
+" s:RenameBuffer : Rename a scratch buffer.   {{{2
+"
+" Parameters:
+"   name - the new name (string)
+"   unique - make the name unique (boolean, optional)
+" Returns:
+"   -
+"-------------------------------------------------------------------------------
+
+function! s:RenameBuffer ( name, ... )
+	if bufname ( '%' ) =~# '\V'.a:name.'\$'
+		return
+	elseif bufname ( '%' ) =~# '\V'.a:name.' -\[0-9]\+-\$'
+		return
+	endif
+
+	let buf_name = a:name
+	if a:0 >= 1 && a:1 && bufnr ( buf_name ) != -1
+		let nr = 2
+		while bufnr ( buf_name.' -'.nr.'-' ) != -1
+			let nr += 1
+		endwhile
+		let buf_name = buf_name.' -'.nr.'-'
+	endif
+	silent exe 'keepalt file '.fnameescape( buf_name )
+endfunction    " ----------  end of function s:RenameBuffer  ----------
 
 "-------------------------------------------------------------------------------
 " s:Redraw : Redraw depending on whether a GUI is running.   {{{2
@@ -206,8 +325,8 @@ function! s:ShellParseArgs ( line )
 			let curr .= mlist[1]
 			let line  = mlist[2]
 		else
-			" otherwise parse up to next space
-			let mlist = matchlist ( line, '^\(\S\+\)\(.*\)' )
+			" otherwise parse up to next special char.: space, backslash, quote
+			let mlist = matchlist ( line, '^\([^[:space:]\\''"]\+\)\(.*\)' )
 			let curr .= mlist[1]
 			let line  = mlist[2]
 		endif
@@ -672,12 +791,12 @@ let s:BASH_RootMenu          	= '&Bash'           " name of the root menu
 let s:BASH_UseToolbox         = 'yes'
 
 if s:NEOVIM
-	" can not use 'vim-io' in Neovim, since :! is not interactive
-	let s:BASH_OutputMethodList = [ 'vim-qf', 'buffer', 'terminal' ]
+	" can not use 'cmd-line' in Neovim, since :! is not interactive
+	let s:BASH_OutputMethodList = [ 'quickfix', 'buffer', 'terminal' ]
 	let s:BASH_OutputMethod     = 'terminal'       " one of 's:BASH_OutputMethodList'
 else
-	let s:BASH_OutputMethodList = [ 'vim-io', 'vim-qf', 'buffer' ]
-	let s:BASH_OutputMethod     = 'vim-io'         " one of 's:BASH_OutputMethodList'
+	let s:BASH_OutputMethodList = [ 'cmd-line', 'quickfix', 'buffer' ]
+	let s:BASH_OutputMethod     = 'cmd-line'         " one of 's:BASH_OutputMethodList'
 	" :TODO:28.09.2017 18:33:WM: Windows defaults (was 'xterm', ran shell in a separate window!?), check running under Windows,
 endif
 if ! s:MSWIN
@@ -691,7 +810,6 @@ let s:BASH_DirectRun              = 'no'         " 'yes' or 'no'
 let s:BASH_LineEndCommColDefault	= 49
 let s:BASH_TemplateJumpTarget 		= ''
 let s:BASH_Errorformat            = '%f: %[%^0-9]%# %l:%m,%f: %l:%m,%f:%l:%m,%f[%l]:%m'
-let s:BASH_Wrapper                = s:plugin_dir.'/bash-support/scripts/wrapper.sh'
 let s:BASH_InsertFileHeader       = 'yes'
 let s:BASH_Ctrl_j                 = 'yes'
 let s:BASH_Ctrl_d                 = 'yes'
@@ -731,7 +849,7 @@ call s:ApplyDefaultSetting ( 'Bash_UseTool_bashdb', 'yes' )
 
 " adapt for backwards compatibility
 if s:BASH_OutputMethod == 'vim'
-	let s:BASH_OutputMethod = 'vim-qf'
+	let s:BASH_OutputMethod = 'quickfix'
 endif
 
 "-------------------------------------------------------------------------------
@@ -970,7 +1088,7 @@ endfunction   " ---------- end of function s:RemoveEcho  ----------
 
 function! s:OutputBufferErrors ( jump )
 
-	if bufname('%') !~ 'Bash Output$' && bufname('%') !~ 'Bash Terminal - '
+	if bufname('%') !~# 'Bash Output' && bufname('%') !~# 'Bash Terminal'
 		return s:ImportantMsg ( 'not inside a Bash output buffer' )
 	endif
 
@@ -992,7 +1110,7 @@ function! s:OutputBufferErrors ( jump )
 	if a:jump != 0
 		cc
 	endif
-endfunction    " ----------  end of function s:OutputBufferErrors  ----------
+endfunction
 
 "-------------------------------------------------------------------------------
 " s:Run : Run the current buffer.   {{{1
@@ -1000,6 +1118,7 @@ endfunction    " ----------  end of function s:OutputBufferErrors  ----------
 " Parameters:
 "   args - command-line arguments (string)
 "   mode - "n" : run complete buffer, "v" : run marked area (string)
+"   ...  - range information
 " Returns:
 "   -
 "-------------------------------------------------------------------------------
@@ -1061,7 +1180,7 @@ function! s:Run ( args, mode, ... ) range
 		let script_esc  = ''
 	else
 		let exec        = s:BASH_Executable
-		let script_orig = expand ( '%' )
+		let script_orig = expand ( '%:p' )
 		let script_esc  = shellescape ( script_orig )
 	endif
 
@@ -1076,18 +1195,18 @@ function! s:Run ( args, mode, ... ) range
 
 	let errformat = s:BASH_Errorformat
 
-	if s:BASH_OutputMethod == 'vim-io'
+	if s:BASH_OutputMethod == 'cmd-line'
 
-		" method : "vim - interactive"
+		" method : "cmd.-line"
 
 		exe '!'.exec.args_interp.' '.script_esc.' '.args_script
 
 		if exists( 'tmpfile' )
 			call delete ( tmpfile )                   " delete the tmpfile
 		endif
-	elseif s:BASH_OutputMethod == 'vim-qf'
+	elseif s:BASH_OutputMethod == 'quickfix'
 
-		" method : "vim - quickfix"
+		" method : "quickfix"
 
 		" run script
 		let bash_output = system ( exec.args_interp.' '.script_esc.' '.args_script )
@@ -1119,17 +1238,16 @@ function! s:Run ( args, mode, ... ) range
 
 		" method : "buffer"
 
-		if bufwinnr ( 'Bash Output$' ) == -1
-			" open buffer
-			above new
-			file Bash\ Output
-			" TODO: name might exist on a different tab page
+		let title_name  = 'Bash Output'
+		let title_range = ''
+		if mode == 'v'
+			let title_range = 'lines '.line_f.'-'.line_l
+		endif
 
-			" settings
-			setlocal buftype=nofile
-			setlocal noswapfile
+		if s:OpenBuffer ( 'Bash Output', 'topic', title_range )
+			" open buffer
+
 			setlocal syntax=none
-			setlocal tabstop=8
 
 			call Bash_SetMapLeader ()
 
@@ -1142,9 +1260,6 @@ function! s:Run ( args, mode, ... ) range
 			vnoremap  <buffer>  <silent>  <LocalLeader>qj  <C-C>:call <SID>OutputBufferErrors(1)<CR>
 
 			call Bash_ResetMapLeader ()
-		else
-			" jump to window
-			exe bufwinnr( 'Bash Output$' ).'wincmd w'
 		endif
 
 		setlocal modifiable
@@ -1205,39 +1320,47 @@ function! s:Run ( args, mode, ... ) range
 						\ " - occurred at " . v:throwpoint )
 		endtry
 
-		let title = 'Bash Terminal - '.expand( '%:t' )
+		let title_name  = 'Bash Terminal'
+		let title_range = ''
 		if mode == 'v'
-			let title  = title.' - lines '.line_f.'-'.line_l
+			let title_range  = 'lines '.line_f.'-'.line_l
+		endif
+		let is_new_buffer = 0
+
+		if s:OpenBuffer ( 'Bash Terminal', 'topic', title_range )
+			" open buffer
+			let is_new_buffer = 1
 		endif
 
 		if s:NEOVIM
-			" :TODO:11.10.2017 18:03:WM: better handling than using 'job_id', but ensures
-			" successful operation for know
-			above new
-			let job_id = termopen ( arg_list, {} )
+			let bn = bufname( '%' )
+			let job_id = termopen( arg_list, {} )
 
-			silent exe 'file '.fnameescape( title.' -'.job_id.'-' )
+			silent exe 'file '.fnameescape( bn )
 		else
-			call term_start ( arg_list, { 'term_name' : title, } )
+			let bn = bufname( '%' )
+			call term_start( arg_list, { 'curwin' : 1, 'term_name' : bn } )
 		endif
 
 		" :TODO:27.09.2017 23:39:WM: needs to handle the tmpfile, use exit callback
 
-		call Bash_SetMapLeader ()
+		if is_new_buffer
+			call Bash_SetMapLeader ()
 
-		" maps: quickfix list
-		if empty( maparg( '<LocalLeader>qf', 'n' ) )
-			nnoremap  <buffer>  <silent>  <LocalLeader>qf       :call <SID>OutputBufferErrors(0)<CR>
-			inoremap  <buffer>  <silent>  <LocalLeader>qf  <C-C>:call <SID>OutputBufferErrors(0)<CR>
-			vnoremap  <buffer>  <silent>  <LocalLeader>qf  <C-C>:call <SID>OutputBufferErrors(0)<CR>
-		endif
-		if empty( maparg( '<LocalLeader>qj', 'n' ) )
-			nnoremap  <buffer>  <silent>  <LocalLeader>qj       :call <SID>OutputBufferErrors(1)<CR>
-			inoremap  <buffer>  <silent>  <LocalLeader>qj  <C-C>:call <SID>OutputBufferErrors(1)<CR>
-			vnoremap  <buffer>  <silent>  <LocalLeader>qj  <C-C>:call <SID>OutputBufferErrors(1)<CR>
-		endif
+			" maps: quickfix list
+			if empty( maparg( '<LocalLeader>qf', 'n' ) )
+				nnoremap  <buffer>  <silent>  <LocalLeader>qf       :call <SID>OutputBufferErrors(0)<CR>
+				inoremap  <buffer>  <silent>  <LocalLeader>qf  <C-C>:call <SID>OutputBufferErrors(0)<CR>
+				vnoremap  <buffer>  <silent>  <LocalLeader>qf  <C-C>:call <SID>OutputBufferErrors(0)<CR>
+			endif
+			if empty( maparg( '<LocalLeader>qj', 'n' ) )
+				nnoremap  <buffer>  <silent>  <LocalLeader>qj       :call <SID>OutputBufferErrors(1)<CR>
+				inoremap  <buffer>  <silent>  <LocalLeader>qj  <C-C>:call <SID>OutputBufferErrors(1)<CR>
+				vnoremap  <buffer>  <silent>  <LocalLeader>qj  <C-C>:call <SID>OutputBufferErrors(1)<CR>
+			endif
 
-		call Bash_ResetMapLeader ()
+			call Bash_ResetMapLeader ()
+		endif
 
 	elseif s:BASH_OutputMethod == 'xterm'
 
@@ -1328,10 +1451,10 @@ function! s:SetOutputMethod ( method )
 
 	exe 'aunmenu '.s:BASH_RootMenu.'.Run.output\ method.Output\ Method'
 
-	if s:BASH_OutputMethod == 'vim-io'
-		let current = 'vim\ io'
-	elseif s:BASH_OutputMethod == 'vim-qf'
-		let current = 'vim\ qf'
+	if s:BASH_OutputMethod == 'cmd-line'
+		let current = 'cmd\.-line'
+	elseif s:BASH_OutputMethod == 'quickfix'
+		let current = 'quickfix'
 	elseif s:BASH_OutputMethod == 'buffer'
 		let current = 'buffer'
 	elseif s:BASH_OutputMethod == 'terminal'
@@ -1469,11 +1592,6 @@ endfunction   " ---------- end of function s:RemoveSpecialCharacters   ---------
 " }}}2
 "-------------------------------------------------------------------------------
 
-let s:BASH_DocBufferName       = "BASH_HELP"
-let s:BASH_DocHelpBufferNumber = -1
-
-let s:BASH_OutputBufferName   = "Bash-Output" " :BUG:28.09.2017 10:41:WM: this is used in s:HelpMan(), check that!
-
 function! s:HelpMan ( type )
 
 	let cuc  = getline(".")[col(".") - 1]         " character under the cursor
@@ -1493,19 +1611,8 @@ function! s:HelpMan ( type )
 	"------------------------------------------------------------------------------
 
 	" jump to an already open bash help window or create one
-	if bufloaded(s:BASH_DocBufferName) != 0 && bufwinnr(s:BASH_DocHelpBufferNumber) != -1
-		exe bufwinnr(s:BASH_DocHelpBufferNumber) . "wincmd w"
-		" buffer number may have changed, e.g. after a 'save as'
-		if bufnr("%") != s:BASH_DocHelpBufferNumber
-			let s:BASH_DocHelpBufferNumber=bufnr(s:BASH_OutputBufferName)
-			exe ":bn ".s:BASH_DocHelpBufferNumber
-		endif
-	else
-		exe ":new ".s:BASH_DocBufferName
-		let s:BASH_DocHelpBufferNumber=bufnr("%")
-		setlocal buftype=nofile
-		setlocal noswapfile
-		setlocal bufhidden=delete
+	if a:type == 'bash' && s:OpenBuffer ( 'Bash Manual', 'reuse_other', 1 )
+				\ || a:type != 'bash' && s:OpenBuffer ( 'Bash Help', 'topic', 'man: '.item )
 		setlocal syntax=OFF
 	endif
 
@@ -1616,20 +1723,8 @@ function! s:HelpBuiltin ()
 		return
 	endif
 
-	" jump to an already open bash help window or create one
-	if bufloaded(s:BASH_DocBufferName) != 0 && bufwinnr(s:BASH_DocHelpBufferNumber) != -1
-		exe bufwinnr(s:BASH_DocHelpBufferNumber) . "wincmd w"
-		" buffer number may have changed, e.g. after a 'save as'
-		if bufnr("%") != s:BASH_DocHelpBufferNumber
-			let s:BASH_DocHelpBufferNumber=bufnr(s:BASH_OutputBufferName)
-			exe ":bn ".s:BASH_DocHelpBufferNumber
-		endif
-	else
-		exe ":new ".s:BASH_DocBufferName
-		let s:BASH_DocHelpBufferNumber=bufnr("%")
-		setlocal buftype=nofile
-		setlocal noswapfile
-		setlocal bufhidden=delete
+	" jump to an already open Bash help window or create one
+	if s:OpenBuffer ( 'Bash Help', 'topic', 'builtin: '.item )
 		setlocal syntax=OFF
 	endif
 
@@ -1959,16 +2054,16 @@ function! s:InitMenus()
 	exe vhead.'save\ +\ &run\ script<Tab>'.esc_mapl.'rr            :call <SID>Run("","v")<CR>'
 	exe ihead.'save\ +\ &run\ script<Tab>'.esc_mapl.'rr       <C-C>:call <SID>Run("","n")<CR>'
 
-	exe ahead_loud.'script\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'ra             <Plug>BashSupportSetBashScriptArgs'
-	exe ihead_loud.'script\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'ra        <C-C><Plug>BashSupportSetBashScriptArgs'
-	exe ahead_loud.'interpreter\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'rba       <Plug>BashSupportSetBashInterpArgs'
-	exe ihead_loud.'interpreter\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'rba  <C-C><Plug>BashSupportSetBashInterpArgs'
+	exe ahead_loud.'script\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'rsa            <Plug>BashSupportSetBashScriptArgs'
+	exe ihead_loud.'script\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'rsa       <C-C><Plug>BashSupportSetBashScriptArgs'
+	exe ahead_loud.'interpreter\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'ria       <Plug>BashSupportSetBashInterpArgs'
+	exe ihead_loud.'interpreter\ cmd\.\ line\ &arg\.<Tab>'.esc_mapl.'ria  <C-C><Plug>BashSupportSetBashInterpArgs'
 
-  exe ahead.'check\ &syntax<Tab>'.esc_mapl.'rc       :call <SID>SyntaxCheck()<CR>'
-  exe ihead.'check\ &syntax<Tab>'.esc_mapl.'rc  <C-C>:call <SID>SyntaxCheck()<CR>'
+	exe ahead.'check\ &syntax<Tab>'.esc_mapl.'rk       :call <SID>SyntaxCheck()<CR>'
+	exe ihead.'check\ &syntax<Tab>'.esc_mapl.'rk  <C-C>:call <SID>SyntaxCheck()<CR>'
 
-	exe ahead_loud.'syntax\ check\ o&ptions<Tab>'.esc_mapl.'rco       <Plug>BashSupportSetBashSyntaxOpts'
-	exe ihead_loud.'syntax\ check\ o&ptions<Tab>'.esc_mapl.'rco  <C-C><Plug>BashSupportSetBashSyntaxOpts'
+	exe ahead_loud.'syntax\ check\ o&ptions<Tab>'.esc_mapl.'rso       <Plug>BashSupportSetBashSyntaxOpts'
+	exe ihead_loud.'syntax\ check\ o&ptions<Tab>'.esc_mapl.'rso  <C-C><Plug>BashSupportSetBashSyntaxOpts'
 
 	exe ahead.'&buffer\ "Bash\ Output\/Term".buffer\ "Bash\ Output\/Term"  :echo "This is a menu header."<CR>'
 	exe ahead.'&buffer\ "Bash\ Output\/Term".-SepHead-              :'
@@ -2013,11 +2108,11 @@ function! s:InitMenus()
 
 	" run -> output method
 	let method_menu_entries = [
-				\ [ 'vim-io',   'vim\ &io',  'interactive', ],
-				\ [ 'vim-qf',   'vim\ &qf',  'quickfix',    ],
-				\ [ 'buffer',   '&buffer',   'quickfix',    ],
-				\ [ 'terminal', '&terminal', 'interact+qf', ],
-				\ [ 'xterm',    '&xterm',    'interactive', ],
+				\ [ 'cmd-line', '&cmd\.-line', 'interactive', ],
+				\ [ 'quickfix', '&quickfix',   'quickfix',    ],
+				\ [ 'buffer',   '&buffer',     'quickfix',    ],
+				\ [ 'terminal', '&terminal',   'interact+qf', ],
+				\ [ 'xterm',    '&xterm',      'interactive', ],
 				\ ]
 
 	for [ method, left, right ] in method_menu_entries
@@ -2183,16 +2278,32 @@ function! s:CreateAdditionalMaps ()
 	nnoremap    <buffer>  <silent>  <LocalLeader>rr        :call <SID>Run("","n")<CR>
 	inoremap    <buffer>  <silent>  <LocalLeader>rr   <Esc>:call <SID>Run("","n")<CR>
 	vnoremap    <buffer>  <silent>  <LocalLeader>rr        :call <SID>Run("","v")<CR>
+	nnoremap    <buffer>  <silent>  <LocalLeader>rk        :call <SID>SyntaxCheck()<CR>
+	inoremap    <buffer>  <silent>  <LocalLeader>rk   <C-C>:call <SID>SyntaxCheck()<CR>
+	vnoremap    <buffer>  <silent>  <LocalLeader>rk   <C-C>:call <SID>SyntaxCheck()<CR>
+
+	" :DEPRECATED:20.03.2018 17:30:WM: remove in next version
 	nnoremap    <buffer>  <silent>  <LocalLeader>rc        :call <SID>SyntaxCheck()<CR>
 	inoremap    <buffer>  <silent>  <LocalLeader>rc   <C-C>:call <SID>SyntaxCheck()<CR>
 	vnoremap    <buffer>  <silent>  <LocalLeader>rc   <C-C>:call <SID>SyntaxCheck()<CR>
 
 	" these maps have to remap
+	 map        <buffer>            <LocalLeader>rsa       <Plug>BashSupportSetBashScriptArgs
+	imap        <buffer>            <LocalLeader>rsa  <Esc><Plug>BashSupportSetBashScriptArgs
+	 map        <buffer>            <LocalLeader>ria       <Plug>BashSupportSetBashInterpArgs
+	imap        <buffer>            <LocalLeader>ria  <Esc><Plug>BashSupportSetBashInterpArgs
+
+	" :DEPRECATED:20.03.2018 17:30:WM: remove in next version
 	 map        <buffer>            <LocalLeader>ra        <Plug>BashSupportSetBashScriptArgs
 	imap        <buffer>            <LocalLeader>ra   <Esc><Plug>BashSupportSetBashScriptArgs
 	 map        <buffer>            <LocalLeader>rba       <Plug>BashSupportSetBashInterpArgs
 	imap        <buffer>            <LocalLeader>rba  <Esc><Plug>BashSupportSetBashInterpArgs
 
+	nmap        <buffer>            <LocalLeader>rso       <Plug>BashSupportSetBashSyntaxOpts
+	imap        <buffer>            <LocalLeader>rso  <C-C><Plug>BashSupportSetBashSyntaxOpts
+	vmap        <buffer>            <LocalLeader>rso  <C-C><Plug>BashSupportSetBashSyntaxOpts
+
+	" :DEPRECATED:20.03.2018 17:30:WM: remove in next version
 	nmap        <buffer>            <LocalLeader>rco       <Plug>BashSupportSetBashSyntaxOpts
 	imap        <buffer>            <LocalLeader>rco  <C-C><Plug>BashSupportSetBashSyntaxOpts
 	vmap        <buffer>            <LocalLeader>rco  <C-C><Plug>BashSupportSetBashSyntaxOpts
